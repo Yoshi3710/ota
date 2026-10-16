@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>タナカ 発注書変換システム v1</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+:root{--bg:#eef4f7;--card:#fff;--line:#cbd5dc;--ink:#172026;--accent:#176b87;--warn:#9a5b00;--bad:#a62424}
+*{box-sizing:border-box} body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP","Yu Gothic UI",Meiryo,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:#fff;border-bottom:1px solid var(--line);padding:14px 22px;position:sticky;top:0;z-index:20}
+header h1{font-size:20px;margin:0 0 3px} header p{margin:0;color:#5b6971;font-size:13px}
+main{max-width:1480px;margin:0 auto;padding:18px;display:grid;grid-template-columns:minmax(360px,1fr) minmax(520px,1.45fr);gap:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.035)}
+h2{font-size:17px;margin:0 0 12px}.muted{color:#6f7d85;font-size:12px}.small{font-size:12px}.row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+button,.btn{border:1px solid #9eb1bb;background:#fff;color:#18313c;padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600} button.primary{background:var(--accent);border-color:var(--accent);color:#fff} button.danger{color:var(--bad)} button:disabled{opacity:.5;cursor:not-allowed}
+input,select,textarea{border:1px solid #b9c6cd;border-radius:7px;padding:7px 8px;background:#fff;font:inherit} input[type=file]{width:100%} label{font-size:12px;color:#44535b;display:block;margin-bottom:3px}.field{min-width:130px;flex:1}.field input{width:100%}
+.progress{height:9px;border-radius:20px;background:#e5ebee;overflow:hidden;margin:10px 0}.progress>div{height:100%;width:0;background:var(--accent);transition:width .2s}.status{font-size:13px;min-height:20px}.warn{color:var(--warn)}.bad{color:var(--bad)}
+#pages{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:480px;overflow:auto}.page-thumb{border:1px solid var(--line);border-radius:8px;padding:5px;background:#fafafa}.page-thumb canvas{width:100%;height:auto;display:block}.page-thumb .cap{font-size:11px;color:#69757b;margin-top:4px}
+.table-wrap{overflow:auto;max-height:560px;border:1px solid var(--line);border-radius:8px} table.edit{border-collapse:collapse;width:100%;font-size:12px;background:#fff}.edit th,.edit td{border-bottom:1px solid #e0e6e9;border-right:1px solid #eef1f2;padding:5px}.edit th{position:sticky;top:0;background:#f5f8f9;z-index:2;white-space:nowrap}.edit input,.edit select{width:100%;padding:5px;border-radius:5px}.edit td:nth-child(1){width:66px}.edit td:nth-child(2){width:92px}.edit td:nth-child(3){width:70px}.edit td:nth-child(4){width:90px}.edit td:nth-child(6){width:80px}.chip{display:inline-block;padding:2px 7px;border-radius:14px;background:#e7f0f3;font-size:11px;margin:2px 3px 2px 0}.danger-chip{background:#fde8e8;color:#8e1f1f}
+.settings{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.settings .wide{grid-column:span 2}.settings .full{grid-column:1/-1}
+.raw{width:100%;height:150px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px}
+#previewArea{grid-column:1/-1}.preview-toolbar{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap}.preview-scroller{overflow:auto;border:1px solid var(--line);border-radius:10px;background:#dbe3e7;padding:14px;max-height:780px}
+.order-page{width:297mm;height:210mm;background:#fff;margin:0 auto 14px;padding:10mm 9mm 8mm;border:1px solid #aab4b9;box-shadow:0 2px 9px rgba(0,0,0,.08);font-family:"Yu Gothic",Meiryo,sans-serif;color:#111;position:relative}
+.order-topline{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:4mm}.order-title{font-size:16px;font-weight:700;border:1.2px solid #111;padding:2mm 4mm;width:62%}.send-count{font-size:11px}.order-date{font-size:11px;text-align:right;margin-top:1mm}
+.order-head{display:grid;grid-template-columns:2.2fr 1fr;border:1.2px solid #111}.order-head-left{border-right:1.2px solid #111}.head-row{display:grid;border-bottom:1px solid #111;min-height:10mm}.head-row:last-child{border-bottom:0}.head-row.r1{grid-template-columns:1.1fr 1.4fr 1fr}.head-row>div{padding:2mm;border-right:1px solid #111;font-size:11px;display:flex;align-items:center}.head-row>div:last-child{border-right:0}.schoolrow{padding:2.5mm 3mm;font-size:12px;font-weight:700;text-align:center}.contactrow{padding:2mm 3mm;font-size:11px;text-align:center}
+.vendor{display:grid;grid-template-columns:1fr 1.35fr;min-height:30mm}.vendor-labels,.vendor-values{display:grid;grid-template-rows:repeat(4,1fr)}.vendor-labels div,.vendor-values div{border-bottom:1px solid #111;padding:1.2mm 2mm;font-size:10px}.vendor-labels div:last-child,.vendor-values div:last-child{border-bottom:0}.vendor-labels{border-right:1px solid #111}.vendor-values div{font-weight:700;text-align:center}
+.order-body{display:grid;grid-template-columns:1.7fr 1fr;gap:10mm;margin-top:2mm}.order-table{border-collapse:collapse;width:100%;font-size:10.5px}.order-table th,.order-table td{border:1px solid #111;padding:1mm 1.5mm;height:7mm}.order-table th{text-align:center}.order-table .family{font-size:14px;font-weight:700;text-align:center;width:20mm}.order-table .vert{writing-mode:vertical-rl;text-orientation:upright;font-weight:700;text-align:center;width:8mm}.order-table .num{text-align:center;font-weight:700}.order-table .sum{font-weight:700;text-align:center}.rightbox{height:65mm;border:1px solid #111;position:relative}.rightbox:after{content:"";position:absolute;left:0;top:0;width:100%;height:100%;background:linear-gradient(to bottom right,transparent 49.7%,#111 50%,transparent 50.3%);pointer-events:none}.faxmark{position:absolute;right:12mm;top:24mm;font-size:34px;color:#d85f5f;border:3px solid #d85f5f;padding:1mm 3mm;border-radius:4px;transform:rotate(-2deg);opacity:.75;display:none}.contactbox{border:1px solid #111;margin-top:8mm;padding:5mm 4mm;text-align:center;font-size:13px;line-height:2}.contactbox .small{font-size:10px;text-align:left;line-height:1.2}.note{font-size:11px;margin-top:4mm;font-weight:700}.unknown-box{margin-top:4px;padding:8px;border:1px solid #e1baba;background:#fff7f7;font-size:12px}
+footer{max-width:1480px;margin:0 auto;padding:0 18px 22px;color:#6c797f;font-size:11px}
+@media(max-width:980px){main{grid-template-columns:1fr}.settings{grid-template-columns:repeat(2,1fr)}#previewArea{grid-column:auto}.order-page{transform-origin:top left;transform:scale(.72);margin-bottom:-55mm}}
+@media print{body{background:#fff}header,main>.card:not(#previewArea),.preview-toolbar,footer{display:none!important}main{display:block;max-width:none;padding:0}#previewArea{border:0;padding:0;box-shadow:none}.preview-scroller{padding:0;border:0;max-height:none;overflow:visible;background:#fff}.order-page{border:0;box-shadow:none;margin:0;page-break-after:always;break-after:page}.order-page:last-child{page-break-after:auto}@page{size:A4 landscape;margin:0}}
+</style>
+</head>
+<body>
+<header>
+  <h1>タナカ 発注書変換システム <span class="small">v1.0 試作版</span></h1>
+  <p>スキャン注文書 → OCR読み取り → 内容確認 → エデュース向け「学年 × 教科」別発注書を自動作成</p>
+</header>
+<main>
+  <section class="card">
+    <h2>① お客さんの注文書を読み込む</h2>
+    <input id="fileInput" type="file" accept="application/pdf,image/*" />
+    <div class="row" style="margin-top:9px">
+      <button id="scanBtn" class="primary">OCR読み取り開始</button>
+      <button id="sampleBtn">見本データを入れる</button>
+      <button id="clearBtn">クリア</button>
+    </div>
+    <div class="progress"><div id="bar"></div></div>
+    <div id="status" class="status muted">PDFまたは画像を選択してください。</div>
+    <p class="muted">初回OCR時は日本語認識データを読み込むため時間がかかります。画像はブラウザ内で処理し、この試作版ではサーバーへ保存しません。</p>
+    <div id="pages"></div>
+  </section>
+
+  <section class="card">
+    <h2>② 読み取り結果を確認・修正</h2>
+    <div class="row" style="margin-bottom:8px">
+      <div class="field"><label>学校名</label><input id="schoolName" placeholder="例：高槻市立阿武山中学校"></div>
+      <div class="field"><label>担当者</label><input id="teacherName" placeholder="例：阿武 太郎"></div>
+    </div>
+    <div class="table-wrap">
+      <table class="edit">
+        <thead><tr><th>学年</th><th>教科</th><th>規格</th><th>品番</th><th>色</th><th>数量</th><th>確認</th><th></th></tr></thead>
+        <tbody id="rowsBody"></tbody>
+      </table>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="addRowBtn">＋ 行を追加</button>
+      <button id="dedupeBtn">同一行を合算</button>
+      <button id="makeBtn" class="primary">③ 発注書を作成</button>
+    </div>
+    <div id="warnings"></div>
+    <details style="margin-top:10px"><summary class="small">OCR生テキストを確認</summary><textarea id="rawText" class="raw" readonly></textarea></details>
+  </section>
+
+  <section class="card">
+    <h2>発注書 共通設定</h2>
+    <div class="settings">
+      <div class="field"><label>年度</label><input id="year" value="2026"></div>
+      <div class="field"><label>発注日</label><input id="orderDate" type="date"></div>
+      <div class="field"><label>学校直送コード</label><input id="schoolCode" value="507070"></div>
+      <div class="field"><label>販売店名</label><input id="vendorName" value="(株)タナカ"></div>
+      <div class="field"><label>販売店コード</label><input id="vendorCode" value="137308"></div>
+      <div class="field"><label>ご注文者</label><input id="orderer" value="大田"></div>
+      <div class="field"><label>TEL</label><input id="tel" value="06-6997-6030"></div>
+      <div class="field"><label>FAX</label><input id="fax" value="06-6997-6035"></div>
+      <div class="field"><label>配送先表記</label><input id="delivery" value="学校直送"></div>
+      <div class="field full"><label><input id="faxStamp" type="checkbox" style="width:auto"> 出力時に「FAX済」印を表示する（通常はOFF）</label></div>
+    </div>
+    <p class="muted">設定はこの端末のブラウザに保存できます。</p>
+    <div class="row"><button id="saveSettings">設定を保存</button><button id="resetSettings">初期値に戻す</button></div>
+  </section>
+
+  <section id="previewArea" class="card">
+    <div class="preview-toolbar">
+      <div><h2 style="margin-bottom:3px">③ エデュース向け発注書プレビュー</h2><div id="previewInfo" class="muted">まだ作成されていません。</div></div>
+      <div class="row"><button id="printBtn" class="primary" disabled>印刷 / PDF保存</button></div>
+    </div>
+    <div id="printArea" class="preview-scroller"><div class="muted">「発注書を作成」を押すと、学年・教科別に1ページずつ作成します。</div></div>
+  </section>
+</main>
+<footer>試作版 v1.0｜OCR結果は必ず確認してから発注してください。未対応の商品コードは警告表示します。</footer>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const $=id=>document.getElementById(id);
+const MASTER={
+  '131801':{family:'A4S',label:'#3 イエロー',color:'イエロー'},'153350':{family:'A4S',label:'#5 オレンジ',color:'オレンジ'},'260143':{family:'A4S',label:'#9 クリーム',color:'クリーム'},'131810':{family:'A4S',label:'#20 ピンク',color:'ピンク'},'131828':{family:'A4S',label:'#24 バイオレット',color:'バイオレット'},'131836':{family:'A4S',label:'#25 ライトブルー',color:'ライトブルー'},'131844':{family:'A4S',label:'#29 グリーン',color:'グリーン'},'131852':{family:'A4S',label:'#36 ブルー',color:'ブルー'},'140932':{family:'A4S',label:'#44 グレー',color:'グレー'},
+  '131860':{family:'B5S',label:'#3 イエロー',color:'イエロー'},'131879':{family:'B5S',label:'#20 ピンク',color:'ピンク'},'131887':{family:'B5S',label:'#24 バイオレット',color:'バイオレット'},'131895':{family:'B5S',label:'#25 ライトブルー',color:'ライトブルー'},'131909':{family:'B5S',label:'#29 グリーン',color:'グリーン'},'131917':{family:'B5S',label:'#36 ブルー',color:'ブルー'},'131925':{family:'B5S',label:'#44 グレー',color:'グレー'},
+  '155290':{family:'A5E',label:'ピンク',color:'ピンク',unsupported:true},'155291':{family:'A5E',label:'黄',color:'黄',unsupported:true},'155292':{family:'A5E',label:'水',color:'水',unsupported:true},'155293':{family:'A5E',label:'緑',color:'緑',unsupported:true},
+  '150182':{family:'B6E',label:'ピンク',color:'ピンク',unsupported:true},'150183':{family:'B6E',label:'黄',color:'黄',unsupported:true},'150184':{family:'B6E',label:'水',color:'水',unsupported:true},'150185':{family:'B6E',label:'緑',color:'緑',unsupported:true}
+};
+const A4_CODES=['131801','153350','260143','131810','131828','131836','131844','131852','140932'];
+const B5_CODES=['131860','131879','131887','131895','131909','131917','131925'];
+let renderedPages=[]; let detectedRows=[]; let ocrWorker=null;
+
+function todayStr(){const d=new Date();return d.toISOString().slice(0,10)}
+$('orderDate').value=todayStr();
+function setStatus(t,cls='muted'){$('status').className='status '+cls;$('status').textContent=t}
+function setBar(p){$('bar').style.width=Math.max(0,Math.min(100,p))+'%'}
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function normalizeGrade(s){s=String(s||'').trim(); if(/教務/.test(s))return '教務'; const m=s.match(/([123])\s*年/);return m?m[1]+'年':s}
+function cleanSubject(s){return String(s||'').replace(/[\s　]+/g,'').replace(/^([123])年/,'').trim()}
+function gradeRank(g){return g==='1年'?1:g==='2年'?2:g==='3年'?3:g==='教務'?4:9}
+
+async function renderInput(file){renderedPages=[];$('pages').innerHTML='';
+  if(file.type==='application/pdf'||file.name.toLowerCase().endsWith('.pdf')){
+    const pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
+    for(let i=1;i<=pdf.numPages;i++){
+      const page=await pdf.getPage(i); const vp=page.getViewport({scale:2.0});
+      const c=document.createElement('canvas'); c.width=vp.width;c.height=vp.height;
+      await page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;
+      renderedPages.push(c); addThumb(c,i);
+    }
+  }else{
+    const img=await fileToImage(file); const c=document.createElement('canvas'); const scale=Math.min(2,2200/img.width);
+    c.width=Math.round(img.width*scale); c.height=Math.round(img.height*scale); c.getContext('2d').drawImage(img,0,0,c.width,c.height);renderedPages.push(c);addThumb(c,1);
+  }
+}
+function fileToImage(file){return new Promise((res,rej)=>{const im=new Image();im.onload=()=>{URL.revokeObjectURL(im.src);res(im)};im.onerror=rej;im.src=URL.createObjectURL(file)})}
+function addThumb(c,i){const d=document.createElement('div');d.className='page-thumb';const cc=document.createElement('canvas');cc.width=c.width;cc.height=c.height;cc.getContext('2d').drawImage(c,0,0);d.appendChild(cc);const cap=document.createElement('div');cap.className='cap';cap.textContent=`${i}ページ`;d.appendChild(cap);$('pages').appendChild(d)}
+
+async function getWorker(){if(ocrWorker)return ocrWorker;setStatus('日本語OCRエンジンを準備しています…');ocrWorker=await Tesseract.createWorker('jpn+eng',1,{logger:m=>{if(m.progress!=null)setBar(Math.round(m.progress*15));}});return ocrWorker}
+
+function wordText(w){return (w.text||'').replace(/[，,．.]/g,'').trim()}
+function parsePageOcr(result,pageNo,canvas){
+  const words=(result.data.words||[]).filter(w=>w.text&&w.confidence>15); const text=result.data.text||'';
+  const W=canvas.width,H=canvas.height;
+  // school / teacher from text
+  if(!$('schoolName').value){const m=text.match(/([^\n]{2,30}(?:中学校|小学校|高等学校))/);if(m)$('schoolName').value=m[1].replace(/^(発注元|学校名|住所)[:：\s]*/,'').trim()}
+  if(!$('teacherName').value){const m=text.match(/担当者[^\n]{0,8}([一-龠々ぁ-んァ-ヶA-Za-z]+(?:[ 　]+[一-龠々ぁ-んァ-ヶA-Za-z]+)?)/);if(m)$('teacherName').value=m[1].trim()}
+  // known codes and row y positions
+  const codeWords=[];
+  for(const w of words){const t=wordText(w).replace(/[^0-9]/g,''); if(MASTER[t]) codeWords.push({code:t,y:(w.bbox.y0+w.bbox.y1)/2,x:(w.bbox.x0+w.bbox.x1)/2});}
+  // find probable subject headers in upper-middle area. Build x clusters from Japanese words in header zone.
+  const hdrWords=words.filter(w=>{const x=(w.bbox.x0+w.bbox.x1)/2/W,y=(w.bbox.y0+w.bbox.y1)/2/H;return y>0.17&&y<0.34&&x>0.29&&x<0.83;});
+  const clusters=[];
+  hdrWords.forEach(w=>{const cx=(w.bbox.x0+w.bbox.x1)/2;let c=clusters.find(k=>Math.abs(k.x-cx)<W*0.035);if(!c){c={x:cx,arr:[]};clusters.push(c)} c.arr.push(w)});
+  clusters.sort((a,b)=>a.x-b.x);
+  const headers=clusters.map(c=>{c.arr.sort((a,b)=>a.bbox.y0-b.bbox.y0);const raw=c.arr.map(w=>w.text.trim()).join('');let grade='';let subject='';const gm=raw.match(/([123])年/);if(gm)grade=gm[1]+'年'; if(/教務/.test(raw))grade='教務';
+    subject=raw.replace(/[123]年/g,'').replace(/教務用?/g,'教務').replace(/[^一-龠々ぁ-んァ-ヶA-Za-z0-9]/g,'');
+    if(grade==='教務')subject='教務';
+    return {x:c.x,grade,subject,raw};
+  }).filter(h=>h.grade||h.subject);
+  // quantity candidates: numeric words 1-4 digits, excluding known codes and totals/right side
+  const nums=words.map(w=>({t:wordText(w).replace(/[^0-9]/g,''),x:(w.bbox.x0+w.bbox.x1)/2,y:(w.bbox.y0+w.bbox.y1)/2,conf:w.confidence})).filter(n=>/^\d{1,4}$/.test(n.t)&&+n.t>0&&+n.t<1000&&n.x/W>0.30&&n.x/W<0.86&&n.y/H>0.28&&n.y/H<0.83);
+  const pageRows=[];
+  for(const cw of codeWords){
+    const near=nums.filter(n=>Math.abs(n.y-cw.y)<H*0.018 && Math.abs(n.x-cw.x)>W*0.06);
+    for(const n of near){
+      let h=headers.length?headers.reduce((a,b)=>Math.abs(b.x-n.x)<Math.abs(a.x-n.x)?b:a):null;
+      // reject totals/very far headers
+      if(h&&Math.abs(h.x-n.x)>W*0.09) h=null;
+      let grade=h?.grade||guessGradeFromText(text)||''; let subject=h?.subject||'';
+      if(subject==='教務')grade='教務';
+      const m=MASTER[cw.code];
+      pageRows.push({grade,subject,family:m.family,code:cw.code,color:m.color,qty:+n.t,confidence:Math.round(n.conf),page:pageNo,auto:true});
+    }
+  }
+  // de-duplicate exact spatial-derived duplicates
+  const map=new Map(); for(const r of pageRows){const k=[r.page,r.grade,r.subject,r.code,r.qty].join('|');if(!map.has(k))map.set(k,r)}
+  return {rows:[...map.values()],text,headers};
+}
+function guessGradeFromText(text){const ms=[...text.matchAll(/([123])\s*年/g)]; if(ms.length){const c={};ms.forEach(m=>c[m[1]]=(c[m[1]]||0)+1);const g=Object.entries(c).sort((a,b)=>b[1]-a[1])[0][0];return g+'年'} if(/教務/.test(text))return '教務';return ''}
+
+async function runOcr(){const file=$('fileInput').files[0];if(!file){setStatus('先にPDFまたは画像を選択してください。','bad');return}
+  try{$('scanBtn').disabled=true;setBar(1);setStatus('スキャン画像を読み込んでいます…');await renderInput(file);const worker=await getWorker();let allText=[];let allRows=[];
+    for(let i=0;i<renderedPages.length;i++){
+      const base=(i/renderedPages.length)*80+15;setStatus(`${i+1}/${renderedPages.length}ページをOCR読み取り中…`);
+      const r=await worker.recognize(renderedPages[i]);const p=parsePageOcr(r,i+1,renderedPages[i]);allText.push(`===== ${i+1}ページ =====\n${p.text}`);allRows.push(...p.rows);setBar(Math.round(base+80/renderedPages.length));
+    }
+    $('rawText').value=allText.join('\n\n');detectedRows=consolidateRows(allRows);renderRows(detectedRows);setBar(100);
+    const msg=detectedRows.length?`${detectedRows.length}行を自動認識しました。学年・教科・数量を必ず確認してください。`:'自動で明細を確定できませんでした。OCR生テキストを確認し、明細行を手入力してください。';setStatus(msg,detectedRows.length?'':'warn');updateWarnings();
+  }catch(e){console.error(e);setStatus('OCR処理でエラーが発生しました。通信状態を確認して、再度お試しください。','bad');}
+  finally{$('scanBtn').disabled=false}
+}
+
+function consolidateRows(rows){const map=new Map();for(const r of rows){if(!r.qty||r.qty<=0)continue;const k=[normalizeGrade(r.grade),cleanSubject(r.subject),r.code].join('|');if(map.has(k))map.get(k).qty+=r.qty;else map.set(k,{...r,grade:normalizeGrade(r.grade),subject:cleanSubject(r.subject)});}return [...map.values()]}
+function rowTemplate(r={}){const m=MASTER[r.code]||{};return `<tr>
+<td><input value="${esc(r.grade||'')}" placeholder="1年"></td>
+<td><input value="${esc(r.subject||'')}" placeholder="美術"></td>
+<td><select><option value="A4S" ${(r.family||m.family)==='A4S'?'selected':''}>A4S</option><option value="B5S" ${(r.family||m.family)==='B5S'?'selected':''}>B5S</option><option value="A5E" ${(r.family||m.family)==='A5E'?'selected':''}>A5E</option><option value="B6E" ${(r.family||m.family)==='B6E'?'selected':''}>B6E</option><option value="その他">その他</option></select></td>
+<td><input value="${esc(r.code||'')}" inputmode="numeric"></td>
+<td><input value="${esc(r.color||m.color||'')}"></td>
+<td><input value="${esc(r.qty||'')}" inputmode="numeric"></td>
+<td>${r.auto?`<span class="chip">OCR ${r.confidence||''}</span>`:'<span class="chip">手入力</span>'}</td>
+<td><button class="danger del">削除</button></td></tr>`}
+function renderRows(rows){$('rowsBody').innerHTML=rows.map(rowTemplate).join('');bindRowEvents()}
+function bindRowEvents(){document.querySelectorAll('.del').forEach(b=>b.onclick=()=>{b.closest('tr').remove();updateWarnings()});document.querySelectorAll('#rowsBody input,#rowsBody select').forEach(x=>x.onchange=updateWarnings)}
+function collectRows(){return [...$('rowsBody').querySelectorAll('tr')].map(tr=>{const e=[...tr.querySelectorAll('input,select')];const code=e[3].value.trim();const m=MASTER[code]||{};return {grade:normalizeGrade(e[0].value),subject:cleanSubject(e[1].value),family:e[2].value,code,color:e[4].value.trim()||m.color||'',qty:parseInt(e[5].value||'0',10)||0};}).filter(r=>r.qty>0||r.code||r.subject||r.grade)}
+function updateWarnings(){const rows=collectRows();const problems=[];rows.forEach((r,i)=>{if(!r.grade)problems.push(`行${i+1}: 学年が未入力`);if(!r.subject&&r.grade!=='教務')problems.push(`行${i+1}: 教科が未入力`);if(!MASTER[r.code])problems.push(`行${i+1}: 未登録品番 ${r.code||'(空欄)'}`);else if(MASTER[r.code].unsupported&&r.qty>0)problems.push(`行${i+1}: ${MASTER[r.code].family} ${r.code} は現在のエデュース発注書レイアウト未対応`);if(!r.qty)problems.push(`行${i+1}: 数量が0/未入力`)});$('warnings').innerHTML=problems.length?`<div class="unknown-box"><b>確認が必要です</b><br>${problems.map(esc).join('<br>')}</div>`:''}
+
+function loadSample(){
+ $('schoolName').value='高槻市立阿武山中学校';$('teacherName').value='阿武 太郎';
+ detectedRows=[
+ {grade:'1年',subject:'美術',code:'153350',family:'A4S',color:'オレンジ',qty:144},{grade:'1年',subject:'英語',code:'131810',family:'A4S',color:'ピンク',qty:144},{grade:'1年',subject:'国語',code:'131828',family:'A4S',color:'バイオレット',qty:144},{grade:'1年',subject:'理科',code:'131844',family:'A4S',color:'グリーン',qty:144},{grade:'1年',subject:'保体',code:'131852',family:'A4S',color:'ブルー',qty:144},{grade:'1年',subject:'家庭',code:'131925',family:'B5S',color:'グレー',qty:144},{grade:'1年',subject:'地理',code:'131860',family:'B5S',color:'イエロー',qty:144},{grade:'1年',subject:'歴史',code:'131909',family:'B5S',color:'グリーン',qty:144},
+ {grade:'教務',subject:'教務',code:'131801',family:'A4S',color:'イエロー',qty:10},{grade:'教務',subject:'教務',code:'153350',family:'A4S',color:'オレンジ',qty:10},{grade:'教務',subject:'教務',code:'260143',family:'A4S',color:'クリーム',qty:10},{grade:'教務',subject:'教務',code:'131810',family:'A4S',color:'ピンク',qty:10},{grade:'教務',subject:'教務',code:'131828',family:'A4S',color:'バイオレット',qty:10},{grade:'教務',subject:'教務',code:'131836',family:'A4S',color:'ライトブルー',qty:10},{grade:'教務',subject:'教務',code:'131844',family:'A4S',color:'グリーン',qty:10},{grade:'教務',subject:'教務',code:'131852',family:'A4S',color:'ブルー',qty:10},{grade:'教務',subject:'教務',code:'140932',family:'A4S',color:'グレー',qty:10},
+ {grade:'教務',subject:'教務',code:'131860',family:'B5S',color:'イエロー',qty:10},{grade:'教務',subject:'教務',code:'131879',family:'B5S',color:'ピンク',qty:10},{grade:'教務',subject:'教務',code:'131887',family:'B5S',color:'バイオレット',qty:10},{grade:'教務',subject:'教務',code:'131895',family:'B5S',color:'ライトブルー',qty:10},{grade:'教務',subject:'教務',code:'131909',family:'B5S',color:'グリーン',qty:10},{grade:'教務',subject:'教務',code:'131917',family:'B5S',color:'ブルー',qty:10},{grade:'教務',subject:'教務',code:'131925',family:'B5S',color:'グレー',qty:10}
+ ];renderRows(detectedRows);updateWarnings();setStatus('見本データを入力しました。「発注書を作成」でレイアウトを確認できます。')
+}
+
+function dedupe(){const rows=collectRows();const map=new Map();for(const r of rows){const k=[r.grade,r.subject,r.code].join('|');if(map.has(k))map.get(k).qty+=r.qty;else map.set(k,{...r});}renderRows([...map.values()]);updateWarnings()}
+function jpDate(s){const d=s?new Date(s+'T00:00:00'):new Date();return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`}
+function getSettings(){return {year:$('year').value.trim(),orderDate:$('orderDate').value,schoolCode:$('schoolCode').value.trim(),vendorName:$('vendorName').value.trim(),vendorCode:$('vendorCode').value.trim(),orderer:$('orderer').value.trim(),tel:$('tel').value.trim(),fax:$('fax').value.trim(),delivery:$('delivery').value.trim(),faxStamp:$('faxStamp').checked}}
+function groupRows(rows){const map=new Map();for(const r of rows){if(!r.qty||!MASTER[r.code]||MASTER[r.code].unsupported)continue;const g=normalizeGrade(r.grade),s=g==='教務'?'教務':cleanSubject(r.subject);const k=g+'|'+s;if(!map.has(k))map.set(k,{grade:g,subject:s,rows:[]});map.get(k).rows.push(r)}return [...map.values()].sort((a,b)=>gradeRank(a.grade)-gradeRank(b.grade)||a.subject.localeCompare(b.subject,'ja'))}
+function orderRows(codes,group){return codes.map(code=>{const m=MASTER[code], found=group.rows.filter(r=>r.code===code);const qty=found.reduce((s,r)=>s+r.qty,0);return {code,label:m.label,qty,subject:qty?(group.grade==='教務'?'':group.subject):''}})}
+function tableBlock(group){const a=orderRows(A4_CODES,group),b=orderRows(B5_CODES,group);const aSum=a.reduce((s,r)=>s+r.qty,0),bSum=b.reduce((s,r)=>s+r.qty,0);let html='<table class="order-table"><thead><tr><th colspan="2">商品名</th><th>品NO.</th><th>注文数(個)</th><th>摘要(科目名)</th></tr></thead><tbody>';
+  a.forEach((r,i)=>{html+='<tr>';if(i===0)html+='<td class="vert" rowspan="18">紙製フラットファイル</td><td class="family" rowspan="9">OFK-<br>A4S</td>';html+=`<td>${esc(r.label)}&nbsp;&nbsp; ${esc(r.code)}</td><td class="num">${r.qty||''}</td><td>${esc(r.subject)}</td></tr>`});
+  html+=`<tr><td class="sum">合計</td><td></td><td class="sum">${aSum||0}</td><td></td></tr>`;
+  b.forEach((r,i)=>{html+='<tr>';if(i===0)html+='<td class="family" rowspan="7">OFK-<br>B5S</td>';html+=`<td>${esc(r.label)}&nbsp;&nbsp; ${esc(r.code)}</td><td class="num">${r.qty||''}</td><td>${esc(r.subject)}</td></tr>`});
+  html+=`<tr><td class="sum">合計</td><td></td><td class="sum">${bSum||0}</td><td></td></tr>`;
+  return html+'</tbody></table>';
+}
+function makePage(group,i,total){const s=getSettings(),school=$('schoolName').value.trim(),teacher=$('teacherName').value.trim();const line=group.grade==='教務'?`教務　　事務室　${esc(teacher)}　先生`:`${esc(group.grade)}　　事務室　${esc(teacher)}　先生`;
+return `<section class="order-page">
+  <div class="order-topline"><div class="order-title">${esc(s.year)}年　サクラ ファイル 専用注文書</div><div><div class="send-count">送付枚数　${total} 枚中 ${i} 枚</div><div class="order-date">${esc(jpDate(s.orderDate))}</div></div></div>
+  <div class="order-head">
+    <div class="order-head-left">
+      <div class="head-row r1"><div><b>発注区分(○印)</b></div><div>${esc(s.delivery)}　・</div><div><b>学校直送コード(6桁)</b>　${esc(s.schoolCode)}</div></div>
+      <div class="schoolrow">${esc(school)}</div><div class="contactrow">${line}</div>
+    </div>
+    <div class="vendor"><div class="vendor-labels"><div>販売店名</div><div>販売店コード</div><div>TEL</div><div>FAX</div></div><div class="vendor-values"><div>${esc(s.vendorName)}</div><div>${esc(s.vendorCode)}</div><div>${esc(s.tel)}</div><div>${esc(s.fax)}　　ご注文者　${esc(s.orderer)}</div></div></div>
+  </div>
+  <div class="order-body"><div>${tableBlock(group)}<div class="note">※各学年別にご発注下さい。何卒よろしくお願い致します。</div></div><div><div class="rightbox"><div class="faxmark" style="display:${s.faxStamp?'block':'none'}">FAX済</div></div><div class="contactbox"><div class="small">■ご用命・お問い合わせは</div><b>${esc(s.vendorName)}</b><br>TEL: ${esc(s.tel)}<br>FAX: ${esc(s.fax)}</div></div></div>
+</section>`}
+function makeOrders(){dedupe();const rows=collectRows();updateWarnings();const groups=groupRows(rows);if(!groups.length){alert('発注書に変換できる明細がありません。');return}const html=groups.map((g,i)=>makePage(g,i+1,groups.length)).join('');$('printArea').innerHTML=html;$('previewInfo').textContent=`${groups.length}ページ作成しました（学年 × 教科ごとに1ページ）。内容確認後に「印刷 / PDF保存」を押してください。`;$('printBtn').disabled=false;$('previewArea').scrollIntoView({behavior:'smooth',block:'start'})}
+
+function saveSettings(){localStorage.setItem('tanakaEduseSettings',JSON.stringify(getSettings()));setStatus('共通設定をこのブラウザに保存しました。')}
+function restoreSettings(){const x=localStorage.getItem('tanakaEduseSettings');if(!x)return;try{const s=JSON.parse(x);for(const k of ['year','orderDate','schoolCode','vendorName','vendorCode','orderer','tel','fax','delivery'])if(s[k]!=null&&$(k))$(k).value=s[k];$('faxStamp').checked=!!s.faxStamp}catch{}}
+function resetSettings(){localStorage.removeItem('tanakaEduseSettings');$('year').value='2026';$('orderDate').value=todayStr();$('schoolCode').value='507070';$('vendorName').value='(株)タナカ';$('vendorCode').value='137308';$('orderer').value='大田';$('tel').value='06-6997-6030';$('fax').value='06-6997-6035';$('delivery').value='学校直送';$('faxStamp').checked=false}
+
+$('scanBtn').onclick=runOcr;$('sampleBtn').onclick=loadSample;$('clearBtn').onclick=()=>{renderedPages=[];detectedRows=[];$('pages').innerHTML='';$('rowsBody').innerHTML='';$('rawText').value='';$('schoolName').value='';$('teacherName').value='';$('fileInput').value='';$('printArea').innerHTML='<div class="muted">「発注書を作成」を押すと、学年・教科別に1ページずつ作成します。</div>';$('printBtn').disabled=true;setBar(0);setStatus('クリアしました。')};
+$('addRowBtn').onclick=()=>{$('rowsBody').insertAdjacentHTML('beforeend',rowTemplate({}));bindRowEvents()};$('dedupeBtn').onclick=dedupe;$('makeBtn').onclick=makeOrders;$('printBtn').onclick=()=>window.print();$('saveSettings').onclick=saveSettings;$('resetSettings').onclick=resetSettings;
+$('fileInput').onchange=async()=>{const f=$('fileInput').files[0];if(!f)return;try{setStatus('プレビューを作成しています…');await renderInput(f);setStatus(`${renderedPages.length}ページを読み込みました。「OCR読み取り開始」を押してください。`)}catch(e){setStatus('ファイルを読み込めませんでした。','bad')}};
+restoreSettings();renderRows([]);
+</script>
+</body>
+</html>
