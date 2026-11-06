@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>タナカ 発注書変換システム v1</title>
+<title>タナカ 発注書変換システム v2</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <style>
@@ -34,8 +34,8 @@ footer{max-width:1480px;margin:0 auto;padding:0 18px 22px;color:#6c797f;font-siz
 </head>
 <body>
 <header>
-  <h1>タナカ 発注書変換システム <span class="small">v1.0 試作版</span></h1>
-  <p>スキャン注文書 → OCR読み取り → 内容確認 → エデュース向け「学年 × 教科」別発注書を自動作成</p>
+  <h1>タナカ 発注書変換システム <span class="small">v2.0 試作版</span></h1>
+  <p>スキャン注文書 → OCR読み取り → 内容確認 → エデュース向け発注書を学年別に自動編成</p>
 </header>
 <main>
   <section class="card">
@@ -96,10 +96,10 @@ footer{max-width:1480px;margin:0 auto;padding:0 18px 22px;color:#6c797f;font-siz
       <div><h2 style="margin-bottom:3px">③ エデュース向け発注書プレビュー</h2><div id="previewInfo" class="muted">まだ作成されていません。</div></div>
       <div class="row"><button id="printBtn" class="primary" disabled>印刷 / PDF保存</button></div>
     </div>
-    <div id="printArea" class="preview-scroller"><div class="muted">「発注書を作成」を押すと、学年・教科別に1ページずつ作成します。</div></div>
+    <div id="printArea" class="preview-scroller"><div class="muted">「発注書を作成」を押すと、学年ごとにまとめ、同一品番が重なる場合だけ次ページへ分けて作成します。</div></div>
   </section>
 </main>
-<footer>試作版 v1.0｜OCR結果は必ず確認してから発注してください。未対応の商品コードは警告表示します。</footer>
+<footer>試作版 v2.0｜OCR結果は必ず確認してから発注してください。未対応の商品コードは警告表示します。</footer>
 <script>
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 const $=id=>document.getElementById(id);
@@ -120,7 +120,7 @@ function setBar(p){$('bar').style.width=Math.max(0,Math.min(100,p))+'%'}
 function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function normalizeGrade(s){s=String(s||'').trim(); if(/教務/.test(s))return '教務'; const m=s.match(/([123])\s*年/);return m?m[1]+'年':s}
 function cleanSubject(s){return String(s||'').replace(/[\s　]+/g,'').replace(/^([123])年/,'').trim()}
-function gradeRank(g){return g==='1年'?1:g==='2年'?2:g==='3年'?3:g==='教務'?4:9}
+function gradeRank(g){return g==='1年'?1:g==='教務'?2:g==='2年'?3:g==='3年'?4:9}
 
 async function renderInput(file){renderedPages=[];$('pages').innerHTML='';
   if(file.type==='application/pdf'||file.name.toLowerCase().endsWith('.pdf')){
@@ -210,19 +210,59 @@ function collectRows(){return [...$('rowsBody').querySelectorAll('tr')].map(tr=>
 function updateWarnings(){const rows=collectRows();const problems=[];rows.forEach((r,i)=>{if(!r.grade)problems.push(`行${i+1}: 学年が未入力`);if(!r.subject&&r.grade!=='教務')problems.push(`行${i+1}: 教科が未入力`);if(!MASTER[r.code])problems.push(`行${i+1}: 未登録品番 ${r.code||'(空欄)'}`);else if(MASTER[r.code].unsupported&&r.qty>0)problems.push(`行${i+1}: ${MASTER[r.code].family} ${r.code} は現在のエデュース発注書レイアウト未対応`);if(!r.qty)problems.push(`行${i+1}: 数量が0/未入力`)});$('warnings').innerHTML=problems.length?`<div class="unknown-box"><b>確認が必要です</b><br>${problems.map(esc).join('<br>')}</div>`:''}
 
 function loadSample(){
- $('schoolName').value='高槻市立阿武山中学校';$('teacherName').value='阿武 太郎';
+ $('schoolName').value='高槻市立阿武山中学校';$('teacherName').value='阿武 太郎';$('orderDate').value='2026-04-14';
  detectedRows=[
- {grade:'1年',subject:'美術',code:'153350',family:'A4S',color:'オレンジ',qty:144},{grade:'1年',subject:'英語',code:'131810',family:'A4S',color:'ピンク',qty:144},{grade:'1年',subject:'国語',code:'131828',family:'A4S',color:'バイオレット',qty:144},{grade:'1年',subject:'理科',code:'131844',family:'A4S',color:'グリーン',qty:144},{grade:'1年',subject:'保体',code:'131852',family:'A4S',color:'ブルー',qty:144},{grade:'1年',subject:'家庭',code:'131925',family:'B5S',color:'グレー',qty:144},{grade:'1年',subject:'地理',code:'131860',family:'B5S',color:'イエロー',qty:144},{grade:'1年',subject:'歴史',code:'131909',family:'B5S',color:'グリーン',qty:144},
- {grade:'教務',subject:'教務',code:'131801',family:'A4S',color:'イエロー',qty:10},{grade:'教務',subject:'教務',code:'153350',family:'A4S',color:'オレンジ',qty:10},{grade:'教務',subject:'教務',code:'260143',family:'A4S',color:'クリーム',qty:10},{grade:'教務',subject:'教務',code:'131810',family:'A4S',color:'ピンク',qty:10},{grade:'教務',subject:'教務',code:'131828',family:'A4S',color:'バイオレット',qty:10},{grade:'教務',subject:'教務',code:'131836',family:'A4S',color:'ライトブルー',qty:10},{grade:'教務',subject:'教務',code:'131844',family:'A4S',color:'グリーン',qty:10},{grade:'教務',subject:'教務',code:'131852',family:'A4S',color:'ブルー',qty:10},{grade:'教務',subject:'教務',code:'140932',family:'A4S',color:'グレー',qty:10},
- {grade:'教務',subject:'教務',code:'131860',family:'B5S',color:'イエロー',qty:10},{grade:'教務',subject:'教務',code:'131879',family:'B5S',color:'ピンク',qty:10},{grade:'教務',subject:'教務',code:'131887',family:'B5S',color:'バイオレット',qty:10},{grade:'教務',subject:'教務',code:'131895',family:'B5S',color:'ライトブルー',qty:10},{grade:'教務',subject:'教務',code:'131909',family:'B5S',color:'グリーン',qty:10},{grade:'教務',subject:'教務',code:'131917',family:'B5S',color:'ブルー',qty:10},{grade:'教務',subject:'教務',code:'131925',family:'B5S',color:'グレー',qty:10}
- ];renderRows(detectedRows);updateWarnings();setStatus('見本データを入力しました。「発注書を作成」でレイアウトを確認できます。')
+ {grade:'1年',subject:'美術',code:'153350',family:'A4S',color:'オレンジ',qty:144},{grade:'1年',subject:'英語',code:'131810',family:'A4S',color:'ピンク',qty:144},{grade:'1年',subject:'国語',code:'131828',family:'A4S',color:'バイオレット',qty:144},{grade:'1年',subject:'理科',code:'131844',family:'A4S',color:'グリーン',qty:144},{grade:'1年',subject:'保体',code:'131852',family:'A4S',color:'ブルー',qty:144},{grade:'1年',subject:'地理',code:'131860',family:'B5S',color:'イエロー',qty:144},{grade:'1年',subject:'歴史',code:'131909',family:'B5S',color:'グリーン',qty:144},{grade:'1年',subject:'家庭',code:'131925',family:'B5S',color:'グレー',qty:144},
+ {grade:'教務',subject:'教務',code:'131801',family:'A4S',color:'イエロー',qty:10},{grade:'教務',subject:'教務',code:'153350',family:'A4S',color:'オレンジ',qty:10},{grade:'教務',subject:'教務',code:'260143',family:'A4S',color:'クリーム',qty:10},{grade:'教務',subject:'教務',code:'131810',family:'A4S',color:'ピンク',qty:10},{grade:'教務',subject:'教務',code:'131828',family:'A4S',color:'バイオレット',qty:10},{grade:'教務',subject:'教務',code:'131836',family:'A4S',color:'ライトブルー',qty:10},{grade:'教務',subject:'教務',code:'131844',family:'A4S',color:'グリーン',qty:10},{grade:'教務',subject:'教務',code:'131852',family:'A4S',color:'ブルー',qty:10},{grade:'教務',subject:'教務',code:'140932',family:'A4S',color:'グレー',qty:10},{grade:'教務',subject:'教務',code:'131860',family:'B5S',color:'イエロー',qty:10},{grade:'教務',subject:'教務',code:'131879',family:'B5S',color:'ピンク',qty:10},{grade:'教務',subject:'教務',code:'131887',family:'B5S',color:'バイオレット',qty:10},{grade:'教務',subject:'教務',code:'131895',family:'B5S',color:'ライトブルー',qty:10},{grade:'教務',subject:'教務',code:'131909',family:'B5S',color:'グリーン',qty:10},{grade:'教務',subject:'教務',code:'131917',family:'B5S',color:'ブルー',qty:10},{grade:'教務',subject:'教務',code:'131925',family:'B5S',color:'グレー',qty:10},
+ {grade:'2年',subject:'数学',code:'131801',family:'A4S',color:'イエロー',qty:130},{grade:'2年',subject:'美術',code:'153350',family:'A4S',color:'オレンジ',qty:130},{grade:'2年',subject:'テスト',code:'260143',family:'A4S',color:'クリーム',qty:260},{grade:'2年',subject:'英語',code:'131810',family:'A4S',color:'ピンク',qty:130},{grade:'2年',subject:'国A',code:'131828',family:'A4S',color:'バイオレット',qty:130},{grade:'2年',subject:'社会',code:'131836',family:'A4S',color:'ライトブルー',qty:130},{grade:'2年',subject:'理A',code:'131844',family:'A4S',color:'グリーン',qty:130},{grade:'2年',subject:'特活',code:'140932',family:'A4S',color:'グレー',qty:130},{grade:'2年',subject:'理B',code:'131909',family:'B5S',color:'グリーン',qty:130},{grade:'2年',subject:'家庭',code:'131917',family:'B5S',color:'ブルー',qty:130},{grade:'2年',subject:'保体',code:'131925',family:'B5S',color:'グレー',qty:130},{grade:'2年',subject:'国B',code:'131828',family:'A4S',color:'バイオレット',qty:130},
+ {grade:'3年',subject:'理B',code:'131801',family:'A4S',color:'イエロー',qty:172},{grade:'3年',subject:'美術',code:'153350',family:'A4S',color:'オレンジ',qty:172},{grade:'3年',subject:'理A',code:'131844',family:'A4S',color:'グリーン',qty:172},{grade:'3年',subject:'保体',code:'140932',family:'A4S',color:'グレー',qty:172},{grade:'3年',subject:'社A',code:'131860',family:'B5S',color:'イエロー',qty:172},{grade:'3年',subject:'国語',code:'131879',family:'B5S',color:'ピンク',qty:172},{grade:'3年',subject:'英語',code:'131887',family:'B5S',color:'バイオレット',qty:172},{grade:'3年',subject:'家庭',code:'131895',family:'B5S',color:'ライトブルー',qty:172},{grade:'3年',subject:'テスト',code:'131909',family:'B5S',color:'グリーン',qty:172},{grade:'3年',subject:'数学',code:'131917',family:'B5S',color:'ブルー',qty:172},{grade:'3年',subject:'クラス',code:'131925',family:'B5S',color:'グレー',qty:172},{grade:'3年',subject:'社B',code:'131860',family:'B5S',color:'イエロー',qty:172}
+ ];renderRows(detectedRows);updateWarnings();setStatus('発注エデュース6枚の見本データを入力しました。「発注書を作成」でV2の編成を確認できます。')
 }
-
 function dedupe(){const rows=collectRows();const map=new Map();for(const r of rows){const k=[r.grade,r.subject,r.code].join('|');if(map.has(k))map.get(k).qty+=r.qty;else map.set(k,{...r});}renderRows([...map.values()]);updateWarnings()}
 function jpDate(s){const d=s?new Date(s+'T00:00:00'):new Date();return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`}
 function getSettings(){return {year:$('year').value.trim(),orderDate:$('orderDate').value,schoolCode:$('schoolCode').value.trim(),vendorName:$('vendorName').value.trim(),vendorCode:$('vendorCode').value.trim(),orderer:$('orderer').value.trim(),tel:$('tel').value.trim(),fax:$('fax').value.trim(),delivery:$('delivery').value.trim(),faxStamp:$('faxStamp').checked}}
-function groupRows(rows){const map=new Map();for(const r of rows){if(!r.qty||!MASTER[r.code]||MASTER[r.code].unsupported)continue;const g=normalizeGrade(r.grade),s=g==='教務'?'教務':cleanSubject(r.subject);const k=g+'|'+s;if(!map.has(k))map.set(k,{grade:g,subject:s,rows:[]});map.get(k).rows.push(r)}return [...map.values()].sort((a,b)=>gradeRank(a.grade)-gradeRank(b.grade)||a.subject.localeCompare(b.subject,'ja'))}
-function orderRows(codes,group){return codes.map(code=>{const m=MASTER[code], found=group.rows.filter(r=>r.code===code);const qty=found.reduce((s,r)=>s+r.qty,0);return {code,label:m.label,qty,subject:qty?(group.grade==='教務'?'':group.subject):''}})}
+function groupRows(rows){
+  const gradeMap=new Map();
+  for(const r of rows){
+    if(!r.qty||!MASTER[r.code]||MASTER[r.code].unsupported)continue;
+    const grade=normalizeGrade(r.grade),subject=grade==='教務'?'教務':cleanSubject(r.subject);
+    if(!gradeMap.has(grade))gradeMap.set(grade,new Map());
+    const subjects=gradeMap.get(grade);
+    if(!subjects.has(subject))subjects.set(subject,[]);
+    subjects.get(subject).push({...r,grade,subject});
+  }
+  const pages=[];
+  [...gradeMap.entries()].sort((a,b)=>gradeRank(a[0])-gradeRank(b[0])).forEach(([grade,subjects])=>{
+    if(grade==='教務'){
+      const all=[...subjects.values()].flat();
+      if(all.length)pages.push({grade,rows:all});
+      return;
+    }
+    const groups=[...subjects.entries()].map(([subject,subjectRows])=>({subject,rows:subjectRows,codes:new Set(subjectRows.map(r=>r.code))}));
+    const frequency={};groups.forEach(g=>g.codes.forEach(code=>frequency[code]=(frequency[code]||0)+1));
+    const lower=Math.max(1,...Object.values(frequency));
+    let packed=null;
+    for(let pageCount=lower;pageCount<=groups.length&&!packed;pageCount++){
+      const bins=Array.from({length:pageCount},()=>({codes:new Set(),groups:[]}));
+      const place=i=>{
+        if(i===groups.length)return true;
+        const g=groups[i];let usedEmpty=false;
+        for(const bin of bins){
+          if(g.codes.size&&[...g.codes].some(code=>bin.codes.has(code)))continue;
+          if(!bin.groups.length){if(usedEmpty)continue;usedEmpty=true}
+          bin.groups.push(g);g.codes.forEach(code=>bin.codes.add(code));
+          if(place(i+1))return true;
+          bin.groups.pop();bin.codes=new Set(bin.groups.flatMap(x=>[...x.codes]));
+        }
+        return false;
+      };
+      if(place(0))packed=bins.filter(b=>b.groups.length).map(b=>({grade,rows:b.groups.flatMap(g=>g.rows)}));
+    }
+    pages.push(...(packed||[]));
+  });
+  return pages;
+}
+function orderRows(codes,group){return codes.map(code=>{const m=MASTER[code],found=group.rows.filter(r=>r.code===code);const qty=found.reduce((s,r)=>s+r.qty,0);const subjects=[...new Set(found.map(r=>r.subject).filter(Boolean))];return {code,label:m.label,qty,subject:qty&&group.grade!=='教務'?subjects.join('・'):''}})}
 function tableBlock(group){const a=orderRows(A4_CODES,group),b=orderRows(B5_CODES,group);const aSum=a.reduce((s,r)=>s+r.qty,0),bSum=b.reduce((s,r)=>s+r.qty,0);let html='<table class="order-table"><thead><tr><th colspan="2">商品名</th><th>品NO.</th><th>注文数(個)</th><th>摘要(科目名)</th></tr></thead><tbody>';
   a.forEach((r,i)=>{html+='<tr>';if(i===0)html+='<td class="vert" rowspan="18">紙製フラットファイル</td><td class="family" rowspan="9">OFK-<br>A4S</td>';html+=`<td>${esc(r.label)}&nbsp;&nbsp; ${esc(r.code)}</td><td class="num">${r.qty||''}</td><td>${esc(r.subject)}</td></tr>`});
   html+=`<tr><td class="sum">合計</td><td></td><td class="sum">${aSum||0}</td><td></td></tr>`;
@@ -242,13 +282,13 @@ return `<section class="order-page">
   </div>
   <div class="order-body"><div>${tableBlock(group)}<div class="note">※各学年別にご発注下さい。何卒よろしくお願い致します。</div></div><div><div class="rightbox"><div class="faxmark" style="display:${s.faxStamp?'block':'none'}">FAX済</div></div><div class="contactbox"><div class="small">■ご用命・お問い合わせは</div><b>${esc(s.vendorName)}</b><br>TEL: ${esc(s.tel)}<br>FAX: ${esc(s.fax)}</div></div></div>
 </section>`}
-function makeOrders(){dedupe();const rows=collectRows();updateWarnings();const groups=groupRows(rows);if(!groups.length){alert('発注書に変換できる明細がありません。');return}const html=groups.map((g,i)=>makePage(g,i+1,groups.length)).join('');$('printArea').innerHTML=html;$('previewInfo').textContent=`${groups.length}ページ作成しました（学年 × 教科ごとに1ページ）。内容確認後に「印刷 / PDF保存」を押してください。`;$('printBtn').disabled=false;$('previewArea').scrollIntoView({behavior:'smooth',block:'start'})}
+function makeOrders(){dedupe();const rows=collectRows();updateWarnings();const groups=groupRows(rows);if(!groups.length){alert('発注書に変換できる明細がありません。');return}const html=groups.map((g,i)=>makePage(g,i+1,groups.length)).join('');$('printArea').innerHTML=html;const inputTotal=rows.filter(r=>r.qty&&MASTER[r.code]&&!MASTER[r.code].unsupported).reduce((s,r)=>s+r.qty,0),outputTotal=groups.reduce((s,g)=>s+g.rows.reduce((t,r)=>t+r.qty,0),0),ok=inputTotal===outputTotal;$('previewInfo').textContent=`${groups.length}ページ作成しました（学年ごとに集約し、同一品番が重なる場合のみ分割）。数量照合 ${inputTotal} → ${outputTotal} ${ok?'一致':'不一致'}。内容確認後に「印刷 / PDF保存」を押してください。`;$('previewInfo').className=ok?'muted':'bad';$('printBtn').disabled=!ok;$('previewArea').scrollIntoView({behavior:'smooth',block:'start'})}
 
 function saveSettings(){localStorage.setItem('tanakaEduseSettings',JSON.stringify(getSettings()));setStatus('共通設定をこのブラウザに保存しました。')}
 function restoreSettings(){const x=localStorage.getItem('tanakaEduseSettings');if(!x)return;try{const s=JSON.parse(x);for(const k of ['year','orderDate','schoolCode','vendorName','vendorCode','orderer','tel','fax','delivery'])if(s[k]!=null&&$(k))$(k).value=s[k];$('faxStamp').checked=!!s.faxStamp}catch{}}
 function resetSettings(){localStorage.removeItem('tanakaEduseSettings');$('year').value='2026';$('orderDate').value=todayStr();$('schoolCode').value='507070';$('vendorName').value='(株)タナカ';$('vendorCode').value='137308';$('orderer').value='大田';$('tel').value='06-6997-6030';$('fax').value='06-6997-6035';$('delivery').value='学校直送';$('faxStamp').checked=false}
 
-$('scanBtn').onclick=runOcr;$('sampleBtn').onclick=loadSample;$('clearBtn').onclick=()=>{renderedPages=[];detectedRows=[];$('pages').innerHTML='';$('rowsBody').innerHTML='';$('rawText').value='';$('schoolName').value='';$('teacherName').value='';$('fileInput').value='';$('printArea').innerHTML='<div class="muted">「発注書を作成」を押すと、学年・教科別に1ページずつ作成します。</div>';$('printBtn').disabled=true;setBar(0);setStatus('クリアしました。')};
+$('scanBtn').onclick=runOcr;$('sampleBtn').onclick=loadSample;$('clearBtn').onclick=()=>{renderedPages=[];detectedRows=[];$('pages').innerHTML='';$('rowsBody').innerHTML='';$('rawText').value='';$('schoolName').value='';$('teacherName').value='';$('fileInput').value='';$('printArea').innerHTML='<div class="muted">「発注書を作成」を押すと、学年ごとにまとめ、同一品番が重なる場合だけ次ページへ分けて作成します。</div>';$('previewInfo').className='muted';$('previewInfo').textContent='まだ作成されていません。';$('printBtn').disabled=true;setBar(0);setStatus('クリアしました。')};
 $('addRowBtn').onclick=()=>{$('rowsBody').insertAdjacentHTML('beforeend',rowTemplate({}));bindRowEvents()};$('dedupeBtn').onclick=dedupe;$('makeBtn').onclick=makeOrders;$('printBtn').onclick=()=>window.print();$('saveSettings').onclick=saveSettings;$('resetSettings').onclick=resetSettings;
 $('fileInput').onchange=async()=>{const f=$('fileInput').files[0];if(!f)return;try{setStatus('プレビューを作成しています…');await renderInput(f);setStatus(`${renderedPages.length}ページを読み込みました。「OCR読み取り開始」を押してください。`)}catch(e){setStatus('ファイルを読み込めませんでした。','bad')}};
 restoreSettings();renderRows([]);
