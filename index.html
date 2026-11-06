@@ -95,6 +95,7 @@ footer{max-width:1480px;margin:0 auto;padding:0 18px 22px;color:#6c797f;font-siz
     <div class="row" style="margin-bottom:8px">
       <div class="field"><label>学校名</label><input id="schoolName" placeholder="例：高槻市立阿武山中学校"></div>
       <div class="field"><label>担当者</label><input id="teacherName" placeholder="例：阿武 太郎"></div>
+      <div class="field"><label>所属／受取場所</label><input id="schoolOffice" value="事務室" placeholder="例：事務室"></div>
     </div>
     <div class="row" style="margin-bottom:8px">
       <div class="field"><label>学校郵便番号</label><input id="schoolPostal" inputmode="numeric" placeholder="例：569-1041"></div>
@@ -174,6 +175,39 @@ const GRID_BASE={
   a4:[454,475,497,519,541,563,585,607,629,650],
   b5:[697,718,740,762,784,806,828,850]
 };
+const SCHOOL_MASTER=[
+  {name:'高槻市立阿武山中学校',aliases:['高槻市立阿武山中学校','阿武山中学校'],postal:'569-1041',address:'高槻市奈佐原1丁目2-1',tel:'072-693-9211',office:'事務室'}
+];
+function schoolKey(s){return String(s||'').normalize('NFKC').replace(/[\s　・|｜"“”'’]/g,'').toLowerCase()}
+function findSchoolMaster(s){const k=schoolKey(s);return SCHOOL_MASTER.find(x=>x.aliases.some(a=>k.includes(schoolKey(a))))||null}
+function applySchoolMaster(source=''){
+  const m=findSchoolMaster(($('schoolName').value||'')+' '+source);
+  if(!m)return false;
+  $('schoolName').value=m.name;
+  $('schoolPostal').value=m.postal;
+  $('schoolAddress').value=m.address;
+  $('schoolTel').value=m.tel;
+  if(!$('schoolOffice').value.trim())$('schoolOffice').value=m.office;
+  return true;
+}
+function cleanOcrAddress(s){
+  return String(s||'').normalize('NFKC')
+    .replace(/[|｜]/g,' ')
+    .replace(/^(?:学校)?住所[:：\s]*/,'')
+    .replace(/発注日.*$/,'')
+    .replace(/担当者.*$/,'')
+    .replace(/["“”'’]/g,'')
+    .replace(/[・●■]/g,'')
+    .replace(/[\s　]+/g,'')
+    .replace(/[ー‐−―]/g,'-')
+    .trim();
+}
+function headerCanvas(source){
+  const c=document.createElement('canvas');
+  c.width=source.width;c.height=Math.max(1,Math.round(source.height*.30));
+  c.getContext('2d').drawImage(source,0,0,source.width,c.height,0,0,c.width,c.height);
+  return c;
+}
 let renderedPages=[]; let detectedRows=[]; let ocrWorker=null; let cameraRawRows=[]; let cameraStream=null;
 
 function todayStr(){const d=new Date();return d.toISOString().slice(0,10)}
@@ -205,34 +239,48 @@ function addThumb(c,i){const d=document.createElement('div');d.className='page-t
 async function getWorker(){if(ocrWorker)return ocrWorker;setStatus('日本語OCRエンジンを準備しています…');ocrWorker=await Tesseract.createWorker('jpn+eng',1,{logger:m=>{if(m.progress!=null)setBar(Math.round(m.progress*15));}});return ocrWorker}
 
 function extractHeaderFields(text){
-  text=String(text||'').normalize('NFKC').replace(/(\d)[ー‐−―](?=\d)/g,'$1-');
+  text=String(text||'').normalize('NFKC').replace(/[|｜]/g,'\n').replace(/(\d)[ー‐−―](?=\d)/g,'$1-');
   const lines=text.split(/\n+/).map(x=>x.trim()).filter(Boolean);
-  if(!$('schoolName').value){
-    const m=text.match(/([^\n]{2,30}(?:中学校|小学校|高等学校))/);
-    if(m)$('schoolName').value=m[1].replace(/^(発注元|学校名|住所)[:：\s]*/,'').trim();
+  const compact=schoolKey(text);
+
+  const master=findSchoolMaster(text);
+  if(master){
+    $('schoolName').value=master.name;
+  }else if(!$('schoolName').value){
+    const joined=text.replace(/[\s　]+/g,'');
+    const m=joined.match(/((?:[一-龠々ぁ-んァ-ヶA-Za-z0-9]+市立)?[一-龠々ぁ-んァ-ヶA-Za-z0-9]{1,20}(?:中学校|小学校|高等学校))/);
+    if(m)$('schoolName').value=m[1].replace(/^(発注元|学校名|住所)[:：]*/,'').trim();
   }
+
   if(!$('teacherName').value){
-    const m=text.match(/(?:担当者|担当先生|先生名|担当)[ \t]*[:：]?[ \t]*([^\n]+)/);
-    if(m)$('teacherName').value=m[1].split(/\s+(?:TEL|FAX|電話|学校名|住所|所属)\s*[:：]?/i)[0].replace(/\s*(先生|様)\s*$/,'').trim();
+    const teacherLine=lines.find(x=>/(担当者|担当先生|先生名)/.test(x));
+    if(teacherLine){
+      let v=teacherLine.replace(/^.*?(?:担当者|担当先生|先生名)\s*[:：]?\s*/,'');
+      v=v.replace(/(?:発注日|住所|TEL|FAX|電話).*$/i,'').replace(/\s*(先生|様)\s*$/,'').trim();
+      if(v&&v.length<=20)$('teacherName').value=v;
+    }
   }
+
   if(!$('schoolPostal').value){
-    const m=text.match(/(?:^|[^\d-])(\d{3}-\d{4}|\d{7})(?![\d-])/m);
+    const m=text.match(/(?:〒\s*)?(\d{3}-\d{4}|\d{7})(?!\d)/);
     if(m)$('schoolPostal').value=m[1].replace(/^(\d{3})(\d{4})$/,'$1-$2');
   }
+
   if(!$('schoolAddress').value){
-    const line=lines.find(x=>/^(学校住所|住所|所在地)\s*[:：]?\s*\S/.test(x))||lines.find(x=>/[都道府県市区町村].*(丁目|番地|番|号|\d+-\d+)/.test(x)&&!/(TEL|FAX|発注日|担当者|販売店)/i.test(x));
-    if(line)$('schoolAddress').value=line.replace(/^(学校住所|住所|所在地)[:：\s]*/,'').replace(/^〒?\s*\d{3}-?\d{4}\s*/,'').trim();
-  }
-  if(!$('schoolTel').value){
-    const phones=[];
-    for(const line of lines){
-      if(/販売店|ご用命|お問い合わせ/.test(line))continue;
-      const m=line.replace(/\s*([-()])\s*/g,'$1').match(/(?:学校\s*)?(?:電話番号|TEL|電話)\s*[:：]?\s*(0\d{1,4}[-(]\d{1,4}[-)]\d{3,4})(?!\d)/i);
-      if(m&&![$('tel').value,$('fax').value].includes(m[1].replace(/[()]/g,'-')))phones.push(m[1].replace(/[()]/g,'-'));
+    let v='';
+    const line=lines.find(x=>/(?:^|\s)(?:学校)?住所\s*[:：]?/.test(x));
+    if(line)v=line.replace(/^.*?(?:学校)?住所\s*[:：]?\s*/,'');
+    if(!v){
+      const joined=text.replace(/\n/g,' ');
+      const m=joined.match(/住所\s*[:：]?\s*(.+?)(?=発注日|担当者|TEL|FAX|電話|$)/);
+      if(m)v=m[1];
     }
-    const unique=[...new Set(phones)];
-    if(unique.length===1)$('schoolTel').value=unique[0];
+    v=cleanOcrAddress(v);
+    if(v&&/[市区町村]/.test(v)&&/\d/.test(v))$('schoolAddress').value=v;
   }
+
+  if(!$('schoolOffice').value.trim())$('schoolOffice').value='事務室';
+  applySchoolMaster(text);
 }
 
 function bestAnchor(score,expected,offsets,radius,scale){
@@ -430,7 +478,7 @@ async function runOcr(){
     await worker.setParameters({tessedit_char_whitelist:'',tessedit_pageseg_mode:'6'});
     if(renderedPages[0]){
       setStatus('学校名・担当者・住所・電話番号を読み取っています…');
-      const head=await worker.recognize(renderedPages[0]);
+      const head=await worker.recognize(headerCanvas(renderedPages[0]));
       extractHeaderFields(head.data.text||'');
     }
     await worker.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'7'});
@@ -470,7 +518,7 @@ function collectRows(){return [...$('rowsBody').querySelectorAll('tr')].map(tr=>
 function updateWarnings(){const rows=collectRows();const problems=[];for(const [id,label] of [['schoolName','学校名'],['teacherName','担当先生名'],['schoolPostal','学校郵便番号'],['schoolAddress','学校住所'],['schoolTel','学校電話番号']])if(!$(id).value.trim())problems.push(`${label}が未入力です。②で確認・入力してください。`);rows.forEach((r,i)=>{if(!r.grade)problems.push(`行${i+1}: 学年が未入力`);if(!r.subject&&r.grade!=='教務')problems.push(`行${i+1}: 教科が未入力`);if(!MASTER[r.code])problems.push(`行${i+1}: 未登録品番 ${r.code||'(空欄)'}`);else if(MASTER[r.code].unsupported&&r.qty>0)problems.push(`行${i+1}: ${MASTER[r.code].family} ${r.code} は現在のエデュース発注書レイアウト未対応`);if(!r.qty)problems.push(`行${i+1}: 数量が0/未入力`)});$('warnings').innerHTML=problems.length?`<div class="unknown-box"><b>確認が必要です</b><br>${problems.map(esc).join('<br>')}</div>`:''}
 
 function loadSample(){
- $('schoolName').value='高槻市立阿武山中学校';$('teacherName').value='阿武 太郎';$('schoolPostal').value='569-1041';$('schoolAddress').value='高槻市奈佐原1丁目2-1';$('schoolTel').value='072-693-9211';$('orderDate').value='2026-04-14';
+ $('schoolName').value='高槻市立阿武山中学校';$('teacherName').value='阿武 太郎';$('schoolOffice').value='事務室';$('schoolPostal').value='569-1041';$('schoolAddress').value='高槻市奈佐原1丁目2-1';$('schoolTel').value='072-693-9211';$('orderDate').value='2026-04-14';
  detectedRows=[
  {grade:'1年',subject:'美術',code:'153350',family:'A4S',color:'オレンジ',qty:144},{grade:'1年',subject:'英語',code:'131810',family:'A4S',color:'ピンク',qty:144},{grade:'1年',subject:'国語',code:'131828',family:'A4S',color:'バイオレット',qty:144},{grade:'1年',subject:'理科',code:'131844',family:'A4S',color:'グリーン',qty:144},{grade:'1年',subject:'保体',code:'131852',family:'A4S',color:'ブルー',qty:144},{grade:'1年',subject:'地理',code:'131860',family:'B5S',color:'イエロー',qty:144},{grade:'1年',subject:'歴史',code:'131909',family:'B5S',color:'グリーン',qty:144},{grade:'1年',subject:'家庭',code:'131925',family:'B5S',color:'グレー',qty:144},
  {grade:'教務',subject:'教務',code:'131801',family:'A4S',color:'イエロー',qty:10},{grade:'教務',subject:'教務',code:'153350',family:'A4S',color:'オレンジ',qty:10},{grade:'教務',subject:'教務',code:'260143',family:'A4S',color:'クリーム',qty:10},{grade:'教務',subject:'教務',code:'131810',family:'A4S',color:'ピンク',qty:10},{grade:'教務',subject:'教務',code:'131828',family:'A4S',color:'バイオレット',qty:10},{grade:'教務',subject:'教務',code:'131836',family:'A4S',color:'ライトブルー',qty:10},{grade:'教務',subject:'教務',code:'131844',family:'A4S',color:'グリーン',qty:10},{grade:'教務',subject:'教務',code:'131852',family:'A4S',color:'ブルー',qty:10},{grade:'教務',subject:'教務',code:'140932',family:'A4S',color:'グレー',qty:10},{grade:'教務',subject:'教務',code:'131860',family:'B5S',color:'イエロー',qty:10},{grade:'教務',subject:'教務',code:'131879',family:'B5S',color:'ピンク',qty:10},{grade:'教務',subject:'教務',code:'131887',family:'B5S',color:'バイオレット',qty:10},{grade:'教務',subject:'教務',code:'131895',family:'B5S',color:'ライトブルー',qty:10},{grade:'教務',subject:'教務',code:'131909',family:'B5S',color:'グリーン',qty:10},{grade:'教務',subject:'教務',code:'131917',family:'B5S',color:'ブルー',qty:10},{grade:'教務',subject:'教務',code:'131925',family:'B5S',color:'グレー',qty:10},
@@ -530,7 +578,7 @@ function tableBlock(group){const a=orderRows(A4_CODES,group),b=orderRows(B5_CODE
   html+=`<tr><td class="sum">合計</td><td></td><td class="sum">${bSum||0}</td><td></td></tr>`;
   return html+'</tbody></table>';
 }
-function makePage(group,i,total){const s=getSettings(),school=$('schoolName').value.trim(),teacher=$('teacherName').value.trim(),postal=$('schoolPostal').value.trim(),address=$('schoolAddress').value.trim(),schoolTel=$('schoolTel').value.trim();const line=group.grade==='教務'?`教務　事務室`:`${esc(group.grade)}　事務室`;
+function makePage(group,i,total){const s=getSettings(),school=$('schoolName').value.trim(),teacher=$('teacherName').value.trim(),postal=$('schoolPostal').value.trim(),address=$('schoolAddress').value.trim(),schoolTel=$('schoolTel').value.trim(),office=$('schoolOffice').value.trim()||'事務室';const line=group.grade==='教務'?`教務　${esc(office)}`:`${esc(group.grade)}　${esc(office)}`;
 return `<section class="order-page">
   <div class="order-topline"><div class="order-title">${esc(s.year)}年　サクラ ファイル 専用注文書</div><div><div class="send-count">送付枚数　${total} 枚中 ${i} 枚</div><div class="order-date">${esc(jpDate(s.orderDate))}</div></div></div>
   <div class="order-head">
@@ -548,8 +596,8 @@ function saveSettings(){localStorage.setItem('tanakaEduseSettings',JSON.stringif
 function restoreSettings(){const x=localStorage.getItem('tanakaEduseSettings');if(!x)return;try{const s=JSON.parse(x);for(const k of ['year','orderDate','schoolCode','vendorName','vendorCode','orderer','tel','fax','delivery'])if(s[k]!=null&&$(k))$(k).value=s[k]}catch{}}
 function resetSettings(){localStorage.removeItem('tanakaEduseSettings');$('year').value='2026';$('orderDate').value=todayStr();$('schoolCode').value='507070';$('vendorName').value='(株)タナカ';$('vendorCode').value='137308';$('orderer').value='大田';$('tel').value='06-6997-6030';$('fax').value='06-6997-6035';$('delivery').value='学校直送'}
 
-['schoolName','teacherName','schoolPostal','schoolAddress','schoolTel'].forEach(id=>$(id).addEventListener('input',updateWarnings));
-$('scanBtn').onclick=runOcr;$('sampleBtn').onclick=loadSample;$('clearBtn').onclick=()=>{renderedPages=[];detectedRows=[];cameraRawRows=[];$('pages').innerHTML='';$('rowsBody').innerHTML='';$('rawText').value='';$('schoolName').value='';$('teacherName').value='';$('schoolPostal').value='';$('schoolAddress').value='';$('schoolTel').value='';$('fileInput').value='';$('cameraCount').textContent='撮影 0/6枚';stopDirectCamera();$('printArea').innerHTML='<div class="muted">「発注書を作成」を押すと、学年ごとにまとめ、同一品番が重なる場合だけ次ページへ分けて作成します。</div>';$('previewInfo').className='muted';$('previewInfo').textContent='まだ作成されていません。';$('printBtn').disabled=true;$('pdfBtn').disabled=true;$('printBtnBottom').disabled=true;$('pdfBtnBottom').disabled=true;setBar(0);setStatus('クリアしました。')};
+['schoolName','teacherName','schoolOffice','schoolPostal','schoolAddress','schoolTel'].forEach(id=>$(id).addEventListener('input',updateWarnings));$('schoolName').addEventListener('change',()=>{applySchoolMaster();updateWarnings()});
+$('scanBtn').onclick=runOcr;$('sampleBtn').onclick=loadSample;$('clearBtn').onclick=()=>{renderedPages=[];detectedRows=[];cameraRawRows=[];$('pages').innerHTML='';$('rowsBody').innerHTML='';$('rawText').value='';$('schoolName').value='';$('teacherName').value='';$('schoolOffice').value='事務室';$('schoolPostal').value='';$('schoolAddress').value='';$('schoolTel').value='';$('fileInput').value='';$('cameraCount').textContent='撮影 0/6枚';stopDirectCamera();$('printArea').innerHTML='<div class="muted">「発注書を作成」を押すと、学年ごとにまとめ、同一品番が重なる場合だけ次ページへ分けて作成します。</div>';$('previewInfo').className='muted';$('previewInfo').textContent='まだ作成されていません。';$('printBtn').disabled=true;$('pdfBtn').disabled=true;$('printBtnBottom').disabled=true;$('pdfBtnBottom').disabled=true;setBar(0);setStatus('クリアしました。')};
 $('addRowBtn').onclick=()=>{$('rowsBody').insertAdjacentHTML('beforeend',rowTemplate({}));bindRowEvents()};$('dedupeBtn').onclick=dedupe;function loadExternalScript(src,test){
   if(test())return Promise.resolve();
   return new Promise((resolve,reject)=>{
@@ -605,7 +653,7 @@ async function processCameraPage(canvas,pageIndex){
     const worker=await getWorker();
     if(pageIndex===0){
       await worker.setParameters({tessedit_char_whitelist:'',tessedit_pageseg_mode:'6'});
-      const head=await worker.recognize(canvas);
+      const head=await worker.recognize(headerCanvas(canvas));
       extractHeaderFields(head.data.text||'');
     }
     await worker.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'7'});
