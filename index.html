@@ -31,7 +31,26 @@ input,select,textarea{border:1px solid #b9c6cd;border-radius:7px;padding:7px 8px
 .order-body{display:grid;grid-template-columns:1.7fr 1fr;gap:10mm;margin-top:2mm}.order-table{border-collapse:collapse;width:100%;font-size:10.5px}.order-table th,.order-table td{border:1px solid #111;padding:1mm 1.5mm;height:7mm}.order-table th{text-align:center}.order-table .family{font-size:14px;font-weight:700;text-align:center;width:20mm}.order-table .vert{font-weight:700;text-align:center;width:24mm;line-height:1.35}.order-table .num{text-align:center;font-weight:700}.order-table .sum{font-weight:700;text-align:center}.rightbox{height:65mm;border:1px solid #111;position:relative}.rightbox:after{content:"";position:absolute;left:0;top:0;width:100%;height:100%;background:linear-gradient(to bottom right,transparent 49.7%,#111 50%,transparent 50.3%);pointer-events:none}.contactbox{border:1px solid #111;margin-top:8mm;padding:5mm 4mm;text-align:center;font-size:13px;line-height:2}.contactbox .small{font-size:10px;text-align:left;line-height:1.2}.note{font-size:11px;margin-top:4mm;font-weight:700}.unknown-box{margin-top:4px;padding:8px;border:1px solid #e1baba;background:#fff7f7;font-size:12px}
 footer{max-width:1480px;margin:0 auto;padding:0 18px 22px;color:#6c797f;font-size:11px}
 @media(max-width:980px){main{grid-template-columns:1fr}.settings{grid-template-columns:repeat(2,1fr)}#previewArea{grid-column:auto}.order-page{transform-origin:top left;transform:scale(.72);margin-bottom:-55mm}}
-@media print{body{background:#fff}header,main>.card:not(#previewArea),.preview-toolbar,.output-actions,footer{display:none!important}main{display:block;max-width:none;padding:0}#previewArea{border:0;padding:0;box-shadow:none}.preview-scroller{padding:0;border:0;max-height:none;overflow:visible;background:#fff}.order-page{border:0;box-shadow:none;margin:0;page-break-after:always;break-after:page}.order-page:last-child{page-break-after:auto}@page{size:A4 landscape;margin:0}}
+.order-page.pdf-export{width:257mm;height:170mm;padding:0;border:0;box-shadow:none;margin:0;transform:none!important}
+.order-page.pdf-export .order-topline{margin-bottom:2.5mm}
+.order-page.pdf-export .order-title{font-size:18px;padding:1.8mm 3mm}
+.order-page.pdf-export .send-count,.order-page.pdf-export .order-date{font-size:12px}
+.order-page.pdf-export .head-row{min-height:8.5mm}
+.order-page.pdf-export .head-row>div{padding:1.4mm 1.6mm;font-size:12px}
+.order-page.pdf-export .schoolrow{padding:1.5mm 2mm;font-size:14px}
+.order-page.pdf-export .contactrow{padding:1.2mm 2mm;font-size:12px;line-height:1.35}
+.order-page.pdf-export .vendor{min-height:28mm}
+.order-page.pdf-export .vendor-labels div,.order-page.pdf-export .vendor-values div{padding:1mm 1.5mm;font-size:11.5px}
+.order-page.pdf-export .order-body{grid-template-columns:1.78fr 1fr;gap:6mm;margin-top:1.5mm}
+.order-page.pdf-export .order-table{font-size:12.5px}
+.order-page.pdf-export .order-table th,.order-page.pdf-export .order-table td{padding:.65mm 1mm;height:6mm}
+.order-page.pdf-export .order-table .family{font-size:15px;width:18mm}
+.order-page.pdf-export .order-table .vert{font-size:13px;width:22mm;line-height:1.25}
+.order-page.pdf-export .rightbox{height:58mm}
+.order-page.pdf-export .contactbox{margin-top:5mm;padding:3mm;font-size:14px;line-height:1.6}
+.order-page.pdf-export .contactbox .small{font-size:11px}
+.order-page.pdf-export .note{font-size:12px;margin-top:2mm}
+@media print{body{background:#fff}header,main>.card:not(#previewArea),.preview-toolbar,.output-actions,footer{display:none!important}main{display:block;max-width:none;padding:0}#previewArea{border:0;padding:0;box-shadow:none}.preview-scroller{padding:0;border:0;max-height:none;overflow:visible;background:#fff}.order-page{width:257mm;height:170mm;padding:0;border:0;box-shadow:none;margin:0;transform:none!important;page-break-after:always;break-after:page}.order-page .order-topline{margin-bottom:2.5mm}.order-page .order-title{font-size:18px;padding:1.8mm 3mm}.order-page .send-count,.order-page .order-date{font-size:12px}.order-page .head-row{min-height:8.5mm}.order-page .head-row>div{padding:1.4mm 1.6mm;font-size:12px}.order-page .schoolrow{padding:1.5mm 2mm;font-size:14px}.order-page .contactrow{padding:1.2mm 2mm;font-size:12px;line-height:1.35}.order-page .vendor{min-height:28mm}.order-page .vendor-labels div,.order-page .vendor-values div{padding:1mm 1.5mm;font-size:11.5px}.order-page .order-body{grid-template-columns:1.78fr 1fr;gap:6mm;margin-top:1.5mm}.order-page .order-table{font-size:12.5px}.order-page .order-table th,.order-page .order-table td{padding:.65mm 1mm;height:6mm}.order-page .order-table .family{font-size:15px;width:18mm}.order-page .order-table .vert{font-size:13px;width:22mm;line-height:1.25}.order-page .rightbox{height:58mm}.order-page .contactbox{margin-top:5mm;padding:3mm;font-size:14px;line-height:1.6}.order-page .contactbox .small{font-size:11px}.order-page .note{font-size:12px;margin-top:2mm}.order-page:last-child{page-break-after:auto}@page{size:A4 landscape;margin:20mm}}
 </style>
 </head>
 <body>
@@ -539,13 +558,12 @@ async function saveOrdersPdf(){
     for(let i=0;i<pages.length;i++){
       setStatus(`発注書を保管中… ${i+1}/${pages.length}ページ`);
       const p=pages[i];
-      const saved={transform:p.style.transform,margin:p.style.margin,border:p.style.border,boxShadow:p.style.boxShadow};
-      p.style.transform='none';p.style.margin='0';p.style.border='0';p.style.boxShadow='none';
-      const canvas=await html2canvas(p,{backgroundColor:'#fff',scale:1.6,useCORS:true,logging:false,windowWidth:1123,windowHeight:794});
-      p.style.transform=saved.transform;p.style.margin=saved.margin;p.style.border=saved.border;p.style.boxShadow=saved.boxShadow;
-      const img=canvas.toDataURL('image/jpeg',0.92);
+      p.classList.add('pdf-export');
+      const canvas=await html2canvas(p,{backgroundColor:'#fff',scale:1.8,useCORS:true,logging:false,windowWidth:972,windowHeight:643});
+      p.classList.remove('pdf-export');
+      const img=canvas.toDataURL('image/jpeg',0.94);
       if(i>0)pdf.addPage('a4','landscape');
-      pdf.addImage(img,'JPEG',0,0,297,210,undefined,'FAST');
+      pdf.addImage(img,'JPEG',20,20,257,170,undefined,'FAST');
     }
     const school=safeFileName($('schoolName').value)||'学校';
     const date=$('orderDate').value||todayStr();
