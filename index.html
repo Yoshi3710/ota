@@ -97,8 +97,9 @@ footer{max-width:1480px;margin:0 auto;padding:0 18px 22px;color:#6c797f;font-siz
       <div class="field"><label>担当者</label><input id="teacherName" placeholder="例：阿武 太郎"></div>
     </div>
     <div class="row" style="margin-bottom:8px">
+      <div class="field"><label>学校郵便番号</label><input id="schoolPostal" inputmode="numeric" placeholder="例：569-1041"></div>
       <div class="field" style="flex:2"><label>学校住所</label><input id="schoolAddress" placeholder="例：高槻市奈佐原1丁目2-1"></div>
-      <div class="field"><label>学校電話番号</label><input id="schoolTel" placeholder="例：072-000-0000"></div>
+      <div class="field"><label>学校電話番号</label><input id="schoolTel" inputmode="tel" placeholder="例：072-693-9211"></div>
     </div>
     <div class="table-wrap">
       <table class="edit">
@@ -211,6 +212,15 @@ function extractHeaderFields(text){
   if(!$('teacherName').value){
     const m=text.match(/担当者[^\n]{0,12}([一-龠々ぁ-んァ-ヶA-Za-z]+(?:[ 　]+[一-龠々ぁ-んァ-ヶA-Za-z]+)?)/);
     if(m)$('teacherName').value=m[1].trim();
+  }
+  if(!$('schoolPostal').value){
+    const m=text.match(/(\d{3}[-ー‐]?\d{4})/);
+    if(m)$('schoolPostal').value=m[1].replace(/[ー‐]/g,'-');
+  }
+  if(!$('schoolAddress').value){
+    const lines=text.split(/\n+/).map(x=>x.trim()).filter(Boolean);
+    const line=lines.find(x=>/(丁目|番地|番|号|\d+-\d+)/.test(x)&&!/(TEL|FAX|発注日|担当者)/i.test(x));
+    if(line)$('schoolAddress').value=line.replace(/^住所[:：\s]*/,'').replace(/^〒?\s*\d{3}[-ー‐]?\d{4}\s*/,'').trim();
   }
 }
 
@@ -449,7 +459,7 @@ function collectRows(){return [...$('rowsBody').querySelectorAll('tr')].map(tr=>
 function updateWarnings(){const rows=collectRows();const problems=[];rows.forEach((r,i)=>{if(!r.grade)problems.push(`行${i+1}: 学年が未入力`);if(!r.subject&&r.grade!=='教務')problems.push(`行${i+1}: 教科が未入力`);if(!MASTER[r.code])problems.push(`行${i+1}: 未登録品番 ${r.code||'(空欄)'}`);else if(MASTER[r.code].unsupported&&r.qty>0)problems.push(`行${i+1}: ${MASTER[r.code].family} ${r.code} は現在のエデュース発注書レイアウト未対応`);if(!r.qty)problems.push(`行${i+1}: 数量が0/未入力`)});$('warnings').innerHTML=problems.length?`<div class="unknown-box"><b>確認が必要です</b><br>${problems.map(esc).join('<br>')}</div>`:''}
 
 function loadSample(){
- $('schoolName').value='高槻市立阿武山中学校';$('teacherName').value='阿武 太郎';$('schoolAddress').value='高槻市奈佐原1丁目2-1';$('schoolTel').value='';$('orderDate').value='2026-04-14';
+ $('schoolName').value='高槻市立阿武山中学校';$('teacherName').value='阿武 太郎';$('schoolPostal').value='569-1041';$('schoolAddress').value='高槻市奈佐原1丁目2-1';$('schoolTel').value='072-693-9211';$('orderDate').value='2026-04-14';
  detectedRows=[
  {grade:'1年',subject:'美術',code:'153350',family:'A4S',color:'オレンジ',qty:144},{grade:'1年',subject:'英語',code:'131810',family:'A4S',color:'ピンク',qty:144},{grade:'1年',subject:'国語',code:'131828',family:'A4S',color:'バイオレット',qty:144},{grade:'1年',subject:'理科',code:'131844',family:'A4S',color:'グリーン',qty:144},{grade:'1年',subject:'保体',code:'131852',family:'A4S',color:'ブルー',qty:144},{grade:'1年',subject:'地理',code:'131860',family:'B5S',color:'イエロー',qty:144},{grade:'1年',subject:'歴史',code:'131909',family:'B5S',color:'グリーン',qty:144},{grade:'1年',subject:'家庭',code:'131925',family:'B5S',color:'グレー',qty:144},
  {grade:'教務',subject:'教務',code:'131801',family:'A4S',color:'イエロー',qty:10},{grade:'教務',subject:'教務',code:'153350',family:'A4S',color:'オレンジ',qty:10},{grade:'教務',subject:'教務',code:'260143',family:'A4S',color:'クリーム',qty:10},{grade:'教務',subject:'教務',code:'131810',family:'A4S',color:'ピンク',qty:10},{grade:'教務',subject:'教務',code:'131828',family:'A4S',color:'バイオレット',qty:10},{grade:'教務',subject:'教務',code:'131836',family:'A4S',color:'ライトブルー',qty:10},{grade:'教務',subject:'教務',code:'131844',family:'A4S',color:'グリーン',qty:10},{grade:'教務',subject:'教務',code:'131852',family:'A4S',color:'ブルー',qty:10},{grade:'教務',subject:'教務',code:'140932',family:'A4S',color:'グレー',qty:10},{grade:'教務',subject:'教務',code:'131860',family:'B5S',color:'イエロー',qty:10},{grade:'教務',subject:'教務',code:'131879',family:'B5S',color:'ピンク',qty:10},{grade:'教務',subject:'教務',code:'131887',family:'B5S',color:'バイオレット',qty:10},{grade:'教務',subject:'教務',code:'131895',family:'B5S',color:'ライトブルー',qty:10},{grade:'教務',subject:'教務',code:'131909',family:'B5S',color:'グリーン',qty:10},{grade:'教務',subject:'教務',code:'131917',family:'B5S',color:'ブルー',qty:10},{grade:'教務',subject:'教務',code:'131925',family:'B5S',color:'グレー',qty:10},
@@ -509,13 +519,13 @@ function tableBlock(group){const a=orderRows(A4_CODES,group),b=orderRows(B5_CODE
   html+=`<tr><td class="sum">合計</td><td></td><td class="sum">${bSum||0}</td><td></td></tr>`;
   return html+'</tbody></table>';
 }
-function makePage(group,i,total){const s=getSettings(),school=$('schoolName').value.trim(),teacher=$('teacherName').value.trim(),address=$('schoolAddress').value.trim(),schoolTel=$('schoolTel').value.trim();const line=group.grade==='教務'?`所属　教務　　事務室　${esc(teacher)}　先生`:`所属　${esc(group.grade)}　　事務室　${esc(teacher)}　先生`;
+function makePage(group,i,total){const s=getSettings(),school=$('schoolName').value.trim(),teacher=$('teacherName').value.trim(),postal=$('schoolPostal').value.trim(),address=$('schoolAddress').value.trim(),schoolTel=$('schoolTel').value.trim();const line=group.grade==='教務'?`教務　事務室`:`${esc(group.grade)}　事務室`;
 return `<section class="order-page">
   <div class="order-topline"><div class="order-title">${esc(s.year)}年　サクラ ファイル 専用注文書</div><div><div class="send-count">送付枚数　${total} 枚中 ${i} 枚</div><div class="order-date">${esc(jpDate(s.orderDate))}</div></div></div>
   <div class="order-head">
     <div class="order-head-left">
       <div class="head-row r1"><div><b>発注区分(○印)</b></div><div>${esc(s.delivery)}　・</div><div><b>学校直送コード(6桁)</b>　${esc(s.schoolCode)}</div></div>
-      <div class="schoolrow">${esc(school)}</div><div class="contactrow">${line}<br>住所　${esc(address)}<br>TEL　${esc(schoolTel)}</div>
+      <div class="schoolrow">学校名　${esc(school)}</div><div class="contactrow">〒 ${esc(postal)}　${esc(address)}<br>担当　${esc(teacher)} 先生　　所属　${line}<br>TEL　${esc(schoolTel)}</div>
     </div>
     <div class="vendor"><div class="vendor-labels"><div>販売店名</div><div>販売店コード</div><div>TEL</div><div>FAX</div></div><div class="vendor-values"><div>${esc(s.vendorName)}</div><div>${esc(s.vendorCode)}</div><div>${esc(s.tel)}</div><div>${esc(s.fax)}　　ご注文者　${esc(s.orderer)}</div></div></div>
   </div>
@@ -527,7 +537,7 @@ function saveSettings(){localStorage.setItem('tanakaEduseSettings',JSON.stringif
 function restoreSettings(){const x=localStorage.getItem('tanakaEduseSettings');if(!x)return;try{const s=JSON.parse(x);for(const k of ['year','orderDate','schoolCode','vendorName','vendorCode','orderer','tel','fax','delivery'])if(s[k]!=null&&$(k))$(k).value=s[k]}catch{}}
 function resetSettings(){localStorage.removeItem('tanakaEduseSettings');$('year').value='2026';$('orderDate').value=todayStr();$('schoolCode').value='507070';$('vendorName').value='(株)タナカ';$('vendorCode').value='137308';$('orderer').value='大田';$('tel').value='06-6997-6030';$('fax').value='06-6997-6035';$('delivery').value='学校直送'}
 
-$('scanBtn').onclick=runOcr;$('sampleBtn').onclick=loadSample;$('clearBtn').onclick=()=>{renderedPages=[];detectedRows=[];cameraRawRows=[];$('pages').innerHTML='';$('rowsBody').innerHTML='';$('rawText').value='';$('schoolName').value='';$('teacherName').value='';$('schoolAddress').value='';$('schoolTel').value='';$('fileInput').value='';$('cameraCount').textContent='撮影 0/6枚';stopDirectCamera();$('printArea').innerHTML='<div class="muted">「発注書を作成」を押すと、学年ごとにまとめ、同一品番が重なる場合だけ次ページへ分けて作成します。</div>';$('previewInfo').className='muted';$('previewInfo').textContent='まだ作成されていません。';$('printBtn').disabled=true;$('pdfBtn').disabled=true;$('printBtnBottom').disabled=true;$('pdfBtnBottom').disabled=true;setBar(0);setStatus('クリアしました。')};
+$('scanBtn').onclick=runOcr;$('sampleBtn').onclick=loadSample;$('clearBtn').onclick=()=>{renderedPages=[];detectedRows=[];cameraRawRows=[];$('pages').innerHTML='';$('rowsBody').innerHTML='';$('rawText').value='';$('schoolName').value='';$('teacherName').value='';$('schoolPostal').value='';$('schoolAddress').value='';$('schoolTel').value='';$('fileInput').value='';$('cameraCount').textContent='撮影 0/6枚';stopDirectCamera();$('printArea').innerHTML='<div class="muted">「発注書を作成」を押すと、学年ごとにまとめ、同一品番が重なる場合だけ次ページへ分けて作成します。</div>';$('previewInfo').className='muted';$('previewInfo').textContent='まだ作成されていません。';$('printBtn').disabled=true;$('pdfBtn').disabled=true;$('printBtnBottom').disabled=true;$('pdfBtnBottom').disabled=true;setBar(0);setStatus('クリアしました。')};
 $('addRowBtn').onclick=()=>{$('rowsBody').insertAdjacentHTML('beforeend',rowTemplate({}));bindRowEvents()};$('dedupeBtn').onclick=dedupe;function loadExternalScript(src,test){
   if(test())return Promise.resolve();
   return new Promise((resolve,reject)=>{
