@@ -97,6 +97,7 @@ footer{max-width:1480px;margin:0 auto;padding:0 18px 22px;color:#6c797f;font-siz
       <div class="field"><label>担当者</label><input id="teacherName" placeholder="自動読取"></div>
       <div class="field"><label>所属／受取場所</label><input id="schoolOffice" value="事務室" placeholder="例：事務室"></div>
     </div>
+    <div class="muted" style="margin:-2px 0 8px">学校情報は重要項目です。自動読取後、原票と照合して表示します。</div>
     <div class="row" style="margin-bottom:8px">
       <div class="field"><label>学校郵便番号</label><input id="schoolPostal" inputmode="numeric" placeholder="自動補完"></div>
       <div class="field" style="flex:2"><label>学校住所</label><input id="schoolAddress" placeholder="自動読取"></div>
@@ -179,14 +180,32 @@ const SCHOOL_MASTER=[
   {name:'高槻市立阿武山中学校',aliases:['高槻市立阿武山中学校','阿武山中学校'],postal:'569-1041',address:'高槻市奈佐原1丁目2-1',tel:'072-693-9211',office:'事務室'}
 ];
 function schoolKey(s){return String(s||'').normalize('NFKC').replace(/[\s　・|｜"“”'’]/g,'').toLowerCase()}
-function findSchoolMaster(s){const k=schoolKey(s);return SCHOOL_MASTER.find(x=>x.aliases.some(a=>k.includes(schoolKey(a))))||null}
+function editDistance(a,b){
+  a=schoolKey(a);b=schoolKey(b);
+  const d=Array.from({length:a.length+1},()=>Array(b.length+1).fill(0));
+  for(let i=0;i<=a.length;i++)d[i][0]=i;
+  for(let j=0;j<=b.length;j++)d[0][j]=j;
+  for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++)d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+  return d[a.length][b.length];
+}
+function findSchoolMaster(s){
+  const k=schoolKey(s);
+  const exact=SCHOOL_MASTER.find(x=>x.aliases.some(a=>k.includes(schoolKey(a))));
+  if(exact)return exact;
+  let best=null,bestScore=99;
+  for(const x of SCHOOL_MASTER)for(const a of x.aliases){
+    const ak=schoolKey(a),score=editDistance(k.slice(Math.max(0,k.length-ak.length-4)),ak);
+    if(score<bestScore){bestScore=score;best=x}
+  }
+  return bestScore<=3?best:null;
+}
 function applySchoolMaster(source=''){
   const m=findSchoolMaster(($('schoolName').value||'')+' '+source);
   if(!m)return false;
   $('schoolName').value=m.name;
-  if(!$('schoolPostal').value.trim())$('schoolPostal').value=m.postal;
-  if(!$('schoolAddress').value.trim())$('schoolAddress').value=m.address;
-  if(!$('schoolTel').value.trim())$('schoolTel').value=m.tel;
+  $('schoolPostal').value=m.postal;
+  $('schoolAddress').value=m.address;
+  if(!$('schoolTel').value.trim()||$('schoolTel').value.replace(/\D/g,'').length<10)$('schoolTel').value=m.tel;
   if(!$('schoolOffice').value.trim())$('schoolOffice').value=m.office;
   return true;
 }
@@ -239,12 +258,12 @@ function addThumb(c,i){const d=document.createElement('div');d.className='page-t
 async function getWorker(){if(ocrWorker)return ocrWorker;setStatus('日本語OCRエンジンを準備しています…');ocrWorker=await Tesseract.createWorker('jpn+eng',1,{logger:m=>{if(m.progress!=null)setBar(Math.round(m.progress*15));}});return ocrWorker}
 
 const HEADER_RECTS={
-  school:{x0:258,y0:235,x1:815,y1:272},
-  address:{x0:258,y0:275,x1:815,y1:311},
-  teacher:{x0:258,y0:315,x1:430,y1:351},
-  tel:{x0:435,y0:315,x1:625,y1:351}
+  school:{x0:245,y0:225,x1:815,y1:264},
+  address:{x0:245,y0:264,x1:815,y1:304},
+  teacher:{x0:240,y0:306,x1:470,y1:345},
+  tel:{x0:400,y0:306,x1:660,y1:345}
 };
-function cropHeaderCell(source,rect,scale=4){
+function cropHeaderCell(source,rect,scale=6,threshold=185){
   const sx=source.width/GRID_BASE.w,sy=source.height/GRID_BASE.h;
   const x0=Math.round(rect.x0*sx),y0=Math.round(rect.y0*sy),x1=Math.round(rect.x1*sx),y1=Math.round(rect.y1*sy);
   const w=Math.max(1,x1-x0),h=Math.max(1,y1-y0);
@@ -255,7 +274,7 @@ function cropHeaderCell(source,rect,scale=4){
   const im=ctx.getImageData(0,0,out.width,out.height),d=im.data;
   for(let i=0;i<d.length;i+=4){
     const g=.299*d[i]+.587*d[i+1]+.114*d[i+2];
-    const v=g<185?0:255;d[i]=d[i+1]=d[i+2]=v;
+    const v=g<threshold?0:255;d[i]=d[i+1]=d[i+2]=v;
   }
   ctx.putImageData(im,0,0);
   return out;
@@ -264,43 +283,77 @@ function cleanHeaderValue(s){
   return String(s||'').normalize('NFKC').replace(/[|｜]/g,' ').replace(/[“”"'’]/g,'').replace(/[\s　]+/g,' ').trim();
 }
 function cleanTeacherValue(s){
-  return cleanHeaderValue(s).replace(/^(担当者|担当)[:：\s]*/,'').replace(/\s*(先生|様)\s*$/,'').trim();
+  return cleanHeaderValue(s)
+    .replace(/^(担当者|担当)[:：\s]*/,'')
+    .replace(/\s*(先生|様)\s*$/,'')
+    .replace(/[^\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}々ヶヵー]/gu,'')
+    .trim();
+}
+function chooseBestCandidate(items,kind){
+  const valid=items.filter(x=>x.value);
+  if(!valid.length)return '';
+  const freq=new Map();
+  for(const x of valid)freq.set(x.value,(freq.get(x.value)||0)+1);
+  return valid.sort((a,b)=>{
+    const fa=freq.get(a.value)||0,fb=freq.get(b.value)||0;
+    if(fa!==fb)return fb-fa;
+    if(kind==='teacher'){
+      const al=a.value.length>=3&&a.value.length<=8?1:0,bl=b.value.length>=3&&b.value.length<=8?1:0;
+      if(al!==bl)return bl-al;
+    }
+    return (b.confidence||0)-(a.confidence||0);
+  })[0].value;
+}
+async function recognizeHeaderVariants(worker,source,rect,cleaner,thresholds=[170,185,200]){
+  const items=[];
+  for(const threshold of thresholds){
+    const r=await worker.recognize(cropHeaderCell(source,rect,6,threshold));
+    items.push({value:cleaner(r.data.text||''),confidence:r.data.confidence||0});
+  }
+  return items;
 }
 function cleanTelValue(s){
   const t=String(s||'').normalize('NFKC').replace(/[ー‐−―]/g,'-');
-  const m=t.match(/0\d{1,4}-?\d{1,4}-?\d{3,4}/);
+  const m=t.match(/0[0-9\-\s]{8,15}/);
   if(!m)return '';
-  if(m[0].includes('-'))return m[0].replace(/-+/g,'-');
   const digits=m[0].replace(/\D/g,'');
   if(digits.length===10){
     if(/^(03|06)/.test(digits))return digits.replace(/^(\d{2})(\d{4})(\d{4})$/,'$1-$2-$3');
     return digits.replace(/^(\d{3})(\d{3})(\d{4})$/,'$1-$2-$3');
   }
-  return m[0];
+  if(digits.length===11)return digits.replace(/^(\d{3})(\d{4})(\d{4})$/,'$1-$2-$3');
+  return '';
 }
 async function readSchoolHeaderCells(worker,source){
-  const out={};
+  const out={school:'',address:'',teacher:'',tel:''};
   await worker.setParameters({tessedit_char_whitelist:'',tessedit_pageseg_mode:'7'});
-  for(const key of ['school','address','teacher']){
-    const r=await worker.recognize(cropHeaderCell(source,HEADER_RECTS[key]));
-    out[key]=cleanHeaderValue(r.data.text||'');
-  }
+
+  const schoolItems=await recognizeHeaderVariants(worker,source,HEADER_RECTS.school,s=>{
+    const v=cleanHeaderValue(s).replace(/^(発注元|学校名)[:：\s]*/,'').replace(/[\s　]+/g,'');
+    return /(中学校|小学校|高等学校)/.test(v)?v:'';
+  });
+  out.school=chooseBestCandidate(schoolItems,'school');
+
+  const addressItems=await recognizeHeaderVariants(worker,source,HEADER_RECTS.address,s=>{
+    const v=cleanOcrAddress(s);
+    return /\d/.test(v)?v:'';
+  });
+  out.address=chooseBestCandidate(addressItems,'address');
+
+  const teacherItems=await recognizeHeaderVariants(worker,source,HEADER_RECTS.teacher,cleanTeacherValue,[160,180,200]);
+  out.teacher=chooseBestCandidate(teacherItems,'teacher');
+
   await worker.setParameters({tessedit_char_whitelist:'0123456789-',tessedit_pageseg_mode:'7'});
-  const tr=await worker.recognize(cropHeaderCell(source,HEADER_RECTS.tel));
-  out.tel=cleanTelValue(tr.data.text||'');
-  if(out.school){
-    const v=out.school.replace(/^(発注元|学校名)[:：\s]*/,'').replace(/[\s　]+/g,'');
-    if(/(中学校|小学校|高等学校)/.test(v))$('schoolName').value=v;
-  }
-  if(out.address){
-    const v=cleanOcrAddress(out.address);
-    if(v&&/[市区町村]/.test(v)&&/\d/.test(v))$('schoolAddress').value=v;
-  }
-  const tv=cleanTeacherValue(out.teacher);
-  if(tv&&tv.length<=20)$('teacherName').value=tv;
+  const telItems=await recognizeHeaderVariants(worker,source,HEADER_RECTS.tel,cleanTelValue,[160,185,205]);
+  out.tel=chooseBestCandidate(telItems,'tel');
+
+  if(out.school)$('schoolName').value=out.school;
+  if(out.address&&/[市区町村]/.test(out.address)&&/\d/.test(out.address))$('schoolAddress').value=out.address;
+  if(out.teacher)$('teacherName').value=out.teacher;
   if(out.tel)$('schoolTel').value=out.tel;
   if(!$('schoolOffice').value.trim())$('schoolOffice').value='事務室';
-  applySchoolMaster(out.school);
+
+  applySchoolMaster(out.school+' '+out.address);
   updateWarnings();
   return out;
 }
