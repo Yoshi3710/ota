@@ -189,12 +189,15 @@ function editDistance(a,b){
   return d[a.length][b.length];
 }
 function findSchoolMaster(s){
-  const k=schoolKey(s);
+  const raw=String(s||'').normalize('NFKC');
+  const k=schoolKey(raw);
   const exact=SCHOOL_MASTER.find(x=>x.aliases.some(a=>k.includes(schoolKey(a))));
   if(exact)return exact;
+  const schoolMatch=raw.match(/[^\s　|｜]{1,30}(?:中学校|小学校|高等学校)/);
+  const target=schoolKey(schoolMatch?schoolMatch[0]:raw);
   let best=null,bestScore=99;
   for(const x of SCHOOL_MASTER)for(const a of x.aliases){
-    const ak=schoolKey(a),score=editDistance(k.slice(Math.max(0,k.length-ak.length-4)),ak);
+    const ak=schoolKey(a),score=editDistance(target,ak);
     if(score<bestScore){bestScore=score;best=x}
   }
   return bestScore<=3?best:null;
