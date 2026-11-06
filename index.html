@@ -93,14 +93,14 @@ footer{max-width:1480px;margin:0 auto;padding:0 18px 22px;color:#6c797f;font-siz
   <section class="card">
     <h2>② 読み取り結果を確認・修正</h2>
     <div class="row" style="margin-bottom:8px">
-      <div class="field"><label>学校名</label><input id="schoolName" placeholder="例：高槻市立阿武山中学校"></div>
-      <div class="field"><label>担当者</label><input id="teacherName" placeholder="例：阿武 太郎"></div>
+      <div class="field"><label>学校名</label><input id="schoolName" placeholder="自動読取"></div>
+      <div class="field"><label>担当者</label><input id="teacherName" placeholder="自動読取"></div>
       <div class="field"><label>所属／受取場所</label><input id="schoolOffice" value="事務室" placeholder="例：事務室"></div>
     </div>
     <div class="row" style="margin-bottom:8px">
-      <div class="field"><label>学校郵便番号</label><input id="schoolPostal" inputmode="numeric" placeholder="例：569-1041"></div>
-      <div class="field" style="flex:2"><label>学校住所</label><input id="schoolAddress" placeholder="例：高槻市奈佐原1丁目2-1"></div>
-      <div class="field"><label>学校電話番号</label><input id="schoolTel" inputmode="tel" placeholder="例：072-693-9211"></div>
+      <div class="field"><label>学校郵便番号</label><input id="schoolPostal" inputmode="numeric" placeholder="自動補完"></div>
+      <div class="field" style="flex:2"><label>学校住所</label><input id="schoolAddress" placeholder="自動読取"></div>
+      <div class="field"><label>学校電話番号</label><input id="schoolTel" inputmode="tel" placeholder="自動読取／補完"></div>
     </div>
     <div class="table-wrap">
       <table class="edit">
@@ -184,9 +184,9 @@ function applySchoolMaster(source=''){
   const m=findSchoolMaster(($('schoolName').value||'')+' '+source);
   if(!m)return false;
   $('schoolName').value=m.name;
-  $('schoolPostal').value=m.postal;
-  $('schoolAddress').value=m.address;
-  $('schoolTel').value=m.tel;
+  if(!$('schoolPostal').value.trim())$('schoolPostal').value=m.postal;
+  if(!$('schoolAddress').value.trim())$('schoolAddress').value=m.address;
+  if(!$('schoolTel').value.trim())$('schoolTel').value=m.tel;
   if(!$('schoolOffice').value.trim())$('schoolOffice').value=m.office;
   return true;
 }
@@ -237,6 +237,69 @@ function fileToImage(file){return new Promise((res,rej)=>{const im=new Image();i
 function addThumb(c,i){const d=document.createElement('div');d.className='page-thumb';const cc=document.createElement('canvas');cc.width=c.width;cc.height=c.height;cc.getContext('2d').drawImage(c,0,0);d.appendChild(cc);const cap=document.createElement('div');cap.className='cap';cap.textContent=`${i}ページ`;d.appendChild(cap);$('pages').appendChild(d)}
 
 async function getWorker(){if(ocrWorker)return ocrWorker;setStatus('日本語OCRエンジンを準備しています…');ocrWorker=await Tesseract.createWorker('jpn+eng',1,{logger:m=>{if(m.progress!=null)setBar(Math.round(m.progress*15));}});return ocrWorker}
+
+const HEADER_RECTS={
+  school:{x0:258,y0:235,x1:815,y1:272},
+  address:{x0:258,y0:275,x1:815,y1:311},
+  teacher:{x0:258,y0:315,x1:430,y1:351},
+  tel:{x0:435,y0:315,x1:625,y1:351}
+};
+function cropHeaderCell(source,rect,scale=4){
+  const sx=source.width/GRID_BASE.w,sy=source.height/GRID_BASE.h;
+  const x0=Math.round(rect.x0*sx),y0=Math.round(rect.y0*sy),x1=Math.round(rect.x1*sx),y1=Math.round(rect.y1*sy);
+  const w=Math.max(1,x1-x0),h=Math.max(1,y1-y0);
+  const out=document.createElement('canvas');out.width=w*scale;out.height=h*scale;
+  const ctx=out.getContext('2d',{willReadFrequently:true});
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,out.width,out.height);
+  ctx.drawImage(source,x0,y0,w,h,0,0,out.width,out.height);
+  const im=ctx.getImageData(0,0,out.width,out.height),d=im.data;
+  for(let i=0;i<d.length;i+=4){
+    const g=.299*d[i]+.587*d[i+1]+.114*d[i+2];
+    const v=g<185?0:255;d[i]=d[i+1]=d[i+2]=v;
+  }
+  ctx.putImageData(im,0,0);
+  return out;
+}
+function cleanHeaderValue(s){
+  return String(s||'').normalize('NFKC').replace(/[|｜]/g,' ').replace(/[“”"'’]/g,'').replace(/[\s　]+/g,' ').trim();
+}
+function cleanTeacherValue(s){
+  return cleanHeaderValue(s).replace(/^(担当者|担当)[:：\s]*/,'').replace(/\s*(先生|様)\s*$/,'').trim();
+}
+function cleanTelValue(s){
+  const t=String(s||'').normalize('NFKC').replace(/[ー‐−―]/g,'-');
+  const m=t.match(/0\d{1,4}-?\d{1,4}-?\d{3,4}/);
+  if(!m)return '';
+  const digits=m[0].replace(/\D/g,'');
+  if(digits.length===10)return digits.replace(/^(0\d)(\d{4})(\d{4})$/,'$1-$2-$3');
+  return m[0];
+}
+async function readSchoolHeaderCells(worker,source){
+  const out={};
+  await worker.setParameters({tessedit_char_whitelist:'',tessedit_pageseg_mode:'7'});
+  for(const key of ['school','address','teacher']){
+    const r=await worker.recognize(cropHeaderCell(source,HEADER_RECTS[key]));
+    out[key]=cleanHeaderValue(r.data.text||'');
+  }
+  await worker.setParameters({tessedit_char_whitelist:'0123456789-',tessedit_pageseg_mode:'7'});
+  const tr=await worker.recognize(cropHeaderCell(source,HEADER_RECTS.tel));
+  out.tel=cleanTelValue(tr.data.text||'');
+  if(out.school){
+    const v=out.school.replace(/^(発注元|学校名)[:：\s]*/,'').replace(/[\s　]+/g,'');
+    if(/(中学校|小学校|高等学校)/.test(v))$('schoolName').value=v;
+  }
+  if(out.address){
+    const v=cleanOcrAddress(out.address);
+    if(v&&/[市区町村]/.test(v)&&/\d/.test(v))$('schoolAddress').value=v;
+  }
+  const tv=cleanTeacherValue(out.teacher);
+  if(tv&&tv.length<=20)$('teacherName').value=tv;
+  if(out.tel)$('schoolTel').value=out.tel;
+  if(!$('schoolOffice').value.trim())$('schoolOffice').value='事務室';
+  applySchoolMaster(out.school);
+  updateWarnings();
+  return out;
+}
 
 function extractHeaderFields(text){
   text=String(text||'').normalize('NFKC').replace(/[|｜]/g,'\n').replace(/(\d)[ー‐−―](?=\d)/g,'$1-');
@@ -480,6 +543,7 @@ async function runOcr(){
       setStatus('学校名・担当者・住所・電話番号を読み取っています…');
       const head=await worker.recognize(headerCanvas(renderedPages[0]));
       extractHeaderFields(head.data.text||'');
+      await readSchoolHeaderCells(worker,renderedPages[0]);
     }
     await worker.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'7'});
     for(let i=0;i<renderedPages.length;i++){
@@ -655,6 +719,7 @@ async function processCameraPage(canvas,pageIndex){
       await worker.setParameters({tessedit_char_whitelist:'',tessedit_pageseg_mode:'6'});
       const head=await worker.recognize(headerCanvas(canvas));
       extractHeaderFields(head.data.text||'');
+      await readSchoolHeaderCells(worker,canvas);
     }
     await worker.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'7'});
     const pageRows=await readTemplatePage(worker,canvas,pageIndex);
