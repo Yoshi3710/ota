@@ -16,6 +16,7 @@ main{max-width:1480px;margin:0 auto;padding:18px;display:grid;grid-template-colu
 h2{font-size:17px;margin:0 0 12px}.muted{color:#6f7d85;font-size:12px}.small{font-size:12px}.row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
 button,.btn{border:1px solid #9eb1bb;background:#fff;color:#18313c;padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600} button.primary{background:var(--accent);border-color:var(--accent);color:#fff} button.danger{color:var(--bad)} button:disabled{opacity:.5;cursor:not-allowed}
 input,select,textarea{border:1px solid #b9c6cd;border-radius:7px;padding:7px 8px;background:#fff;font:inherit} input[type=file]{width:100%} label{font-size:12px;color:#44535b;display:block;margin-bottom:3px}.field{min-width:130px;flex:1}.field input{width:100%}
+.drop-zone{border:2px dashed #9eb1bb;border-radius:10px;padding:14px;background:#f8fbfc;transition:border-color .15s,background .15s}.drop-zone.dragover{border-color:var(--accent);background:#eef8fb}.drop-hint{margin:0 0 8px;text-align:center;font-size:13px;color:#5b6971}
 .progress{height:9px;border-radius:20px;background:#e5ebee;overflow:hidden;margin:10px 0}.progress>div{height:100%;width:0;background:var(--accent);transition:width .2s}.status{font-size:13px;min-height:20px}.warn{color:var(--warn)}.bad{color:var(--bad)}
 #pages{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:480px;overflow:auto}.page-thumb{border:1px solid var(--line);border-radius:8px;padding:5px;background:#fafafa}.page-thumb canvas{width:100%;height:auto;display:block}.page-thumb .cap{font-size:11px;color:#69757b;margin-top:4px}
 .table-wrap{overflow:auto;max-height:560px;border:1px solid var(--line);border-radius:8px} table.edit{border-collapse:collapse;width:100%;font-size:12px;background:#fff}.edit th,.edit td{border-bottom:1px solid #e0e6e9;border-right:1px solid #eef1f2;padding:5px}.edit th{position:sticky;top:0;background:#f5f8f9;z-index:2;white-space:nowrap}.edit input,.edit select{width:100%;padding:5px;border-radius:5px}.edit td:nth-child(1){width:66px}.edit td:nth-child(2){width:92px}.edit td:nth-child(3){width:70px}.edit td:nth-child(4){width:90px}.edit td:nth-child(6){width:80px}.chip{display:inline-block;padding:2px 7px;border-radius:14px;background:#e7f0f3;font-size:11px;margin:2px 3px 2px 0}.danger-chip{background:#fde8e8;color:#8e1f1f}
@@ -40,7 +41,10 @@ footer{max-width:1480px;margin:0 auto;padding:0 18px 22px;color:#6c797f;font-siz
 <main>
   <section class="card">
     <h2>① お客さんの注文書を読み込む</h2>
-    <input id="fileInput" type="file" accept="application/pdf,image/*" />
+    <div id="dropZone" class="drop-zone">
+      <p class="drop-hint">PDFまたは画像をここにドロップ、または下からファイルを選択</p>
+      <input id="fileInput" type="file" accept="application/pdf,image/*" />
+    </div>
     <div class="row" style="margin-top:9px">
       <button id="scanBtn" class="primary">OCR読み取り開始</button>
       <button id="sampleBtn">見本データを入れる</button>
@@ -290,7 +294,12 @@ function resetSettings(){localStorage.removeItem('tanakaEduseSettings');$('year'
 
 $('scanBtn').onclick=runOcr;$('sampleBtn').onclick=loadSample;$('clearBtn').onclick=()=>{renderedPages=[];detectedRows=[];$('pages').innerHTML='';$('rowsBody').innerHTML='';$('rawText').value='';$('schoolName').value='';$('teacherName').value='';$('fileInput').value='';$('printArea').innerHTML='<div class="muted">「発注書を作成」を押すと、学年ごとにまとめ、同一品番が重なる場合だけ次ページへ分けて作成します。</div>';$('previewInfo').className='muted';$('previewInfo').textContent='まだ作成されていません。';$('printBtn').disabled=true;setBar(0);setStatus('クリアしました。')};
 $('addRowBtn').onclick=()=>{$('rowsBody').insertAdjacentHTML('beforeend',rowTemplate({}));bindRowEvents()};$('dedupeBtn').onclick=dedupe;$('makeBtn').onclick=makeOrders;$('printBtn').onclick=()=>window.print();$('saveSettings').onclick=saveSettings;$('resetSettings').onclick=resetSettings;
-$('fileInput').onchange=async()=>{const f=$('fileInput').files[0];if(!f)return;try{setStatus('プレビューを作成しています…');await renderInput(f);setStatus(`${renderedPages.length}ページを読み込みました。「OCR読み取り開始」を押してください。`)}catch(e){setStatus('ファイルを読み込めませんでした。','bad')}};
+async function previewSelectedFile(f){if(!f)return;try{setStatus('プレビューを作成しています…');await renderInput(f);setStatus(`${renderedPages.length}ページを読み込みました。「OCR読み取り開始」を押してください。`)}catch(e){setStatus('ファイルを読み込めませんでした。','bad')}}
+$('fileInput').onchange=()=>previewSelectedFile($('fileInput').files[0]);
+const dropZone=$('dropZone');
+['dragenter','dragover'].forEach(type=>dropZone.addEventListener(type,e=>{e.preventDefault();e.stopPropagation();dropZone.classList.add('dragover')}));
+['dragleave','drop'].forEach(type=>dropZone.addEventListener(type,e=>{e.preventDefault();e.stopPropagation();dropZone.classList.remove('dragover')}));
+dropZone.addEventListener('drop',e=>{const f=e.dataTransfer?.files?.[0];if(!f)return;if(!(f.type==='application/pdf'||f.type.startsWith('image/')||f.name.toLowerCase().endsWith('.pdf'))){setStatus('PDFまたは画像ファイルをドロップしてください。','bad');return}const dt=new DataTransfer();dt.items.add(f);$('fileInput').files=dt.files;previewSelectedFile(f)});
 restoreSettings();renderRows([]);
 </script>
 </body>
