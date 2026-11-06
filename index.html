@@ -47,7 +47,7 @@ footer{max-width:1480px;margin:0 auto;padding:0 18px 22px;color:#6c797f;font-siz
       <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden />
       <div class="row" style="margin-top:9px;justify-content:center">
         <button id="cameraBtn" type="button">📷 スマホで撮影</button>
-        <span id="cameraCount" class="muted">撮影 0/6枚</span>
+        <span id="cameraCount" class="muted">撮影 0/6枚（撮影後、自動読取）</span>
       </div>
     </div>
     <div class="row" style="margin-top:9px">
@@ -134,7 +134,7 @@ const GRID_BASE={
   a4:[454,475,497,519,541,563,585,607,629,650],
   b5:[697,718,740,762,784,806,828,850]
 };
-let renderedPages=[]; let detectedRows=[]; let ocrWorker=null;
+let renderedPages=[]; let detectedRows=[]; let ocrWorker=null; let cameraRawRows=[];
 
 function todayStr(){const d=new Date();return d.toISOString().slice(0,10)}
 $('orderDate').value=todayStr();
@@ -488,9 +488,34 @@ function saveSettings(){localStorage.setItem('tanakaEduseSettings',JSON.stringif
 function restoreSettings(){const x=localStorage.getItem('tanakaEduseSettings');if(!x)return;try{const s=JSON.parse(x);for(const k of ['year','orderDate','schoolCode','vendorName','vendorCode','orderer','tel','fax','delivery'])if(s[k]!=null&&$(k))$(k).value=s[k];$('faxStamp').checked=!!s.faxStamp}catch{}}
 function resetSettings(){localStorage.removeItem('tanakaEduseSettings');$('year').value='2026';$('orderDate').value=todayStr();$('schoolCode').value='507070';$('vendorName').value='(株)タナカ';$('vendorCode').value='137308';$('orderer').value='大田';$('tel').value='06-6997-6030';$('fax').value='06-6997-6035';$('delivery').value='学校直送';$('faxStamp').checked=false}
 
-$('scanBtn').onclick=runOcr;$('sampleBtn').onclick=loadSample;$('clearBtn').onclick=()=>{renderedPages=[];detectedRows=[];$('pages').innerHTML='';$('rowsBody').innerHTML='';$('rawText').value='';$('schoolName').value='';$('teacherName').value='';$('fileInput').value='';$('cameraInput').value='';$('cameraCount').textContent='撮影 0/6枚';$('printArea').innerHTML='<div class="muted">「発注書を作成」を押すと、学年ごとにまとめ、同一品番が重なる場合だけ次ページへ分けて作成します。</div>';$('previewInfo').className='muted';$('previewInfo').textContent='まだ作成されていません。';$('printBtn').disabled=true;setBar(0);setStatus('クリアしました。')};
+$('scanBtn').onclick=runOcr;$('sampleBtn').onclick=loadSample;$('clearBtn').onclick=()=>{renderedPages=[];detectedRows=[];cameraRawRows=[];$('pages').innerHTML='';$('rowsBody').innerHTML='';$('rawText').value='';$('schoolName').value='';$('teacherName').value='';$('fileInput').value='';$('cameraInput').value='';$('cameraCount').textContent='撮影 0/6枚';$('printArea').innerHTML='<div class="muted">「発注書を作成」を押すと、学年ごとにまとめ、同一品番が重なる場合だけ次ページへ分けて作成します。</div>';$('previewInfo').className='muted';$('previewInfo').textContent='まだ作成されていません。';$('printBtn').disabled=true;setBar(0);setStatus('クリアしました。')};
 $('addRowBtn').onclick=()=>{$('rowsBody').insertAdjacentHTML('beforeend',rowTemplate({}));bindRowEvents()};$('dedupeBtn').onclick=dedupe;$('makeBtn').onclick=makeOrders;$('printBtn').onclick=()=>window.print();$('saveSettings').onclick=saveSettings;$('resetSettings').onclick=resetSettings;
-async function previewSelectedFile(f){if(!f)return;try{setStatus('プレビューを作成しています…');await renderInput(f);$('cameraCount').textContent='撮影 0/6枚';setStatus(`${renderedPages.length}ページを読み込みました。「OCR読み取り開始」を押してください。`)}catch(e){setStatus('ファイルを読み込めませんでした。','bad')}}
+async function previewSelectedFile(f){if(!f)return;try{cameraRawRows=[];setStatus('プレビューを作成しています…');await renderInput(f);$('cameraCount').textContent='撮影 0/6枚';setStatus(`${renderedPages.length}ページを読み込みました。「OCR読み取り開始」を押してください。`)}catch(e){setStatus('ファイルを読み込めませんでした。','bad')}}
+async function processCameraPage(canvas,pageIndex){
+  try{
+    $('scanBtn').disabled=true;
+    setStatus(`${pageIndex+1}ページ目を自動読み取り中…`);
+    const worker=await getWorker();
+    if(pageIndex===0){
+      await worker.setParameters({tessedit_char_whitelist:'',tessedit_pageseg_mode:'6'});
+      const head=await worker.recognize(canvas);
+      extractHeaderFields(head.data.text||'');
+    }
+    await worker.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'7'});
+    const pageRows=await readTemplatePage(worker,canvas,pageIndex);
+    cameraRawRows=cameraRawRows.filter(r=>r.page!==pageIndex+1).concat(pageRows);
+    detectedRows=consolidateRows(correctTemplateQuantities(cameraRawRows));
+    renderRows(detectedRows);updateWarnings();
+    $('rawText').value=detectedRows.map(r=>`${r.grade} ${r.subject} / ${r.code} ${r.color} / ${r.qty}${r.corrected?'（自動補正）':''}`).join('\n');
+    const count=pageIndex+1;
+    setStatus(`${count}ページ目を読み取り、②へ反映しました。${count<6?'続けて次のページを撮影してください。':'6ページ分の読み取りが完了しました。内容を確認してください。'}`);
+  }catch(e){
+    console.error(e);
+    setStatus(`${pageIndex+1}ページ目の自動読み取りに失敗しました。撮り直すか、OCR読み取り開始を押してください。`,'bad');
+  }finally{
+    $('scanBtn').disabled=false;
+  }
+}
 async function addCameraPage(f){
   if(!f)return;
   if(renderedPages.length>=6){setStatus('撮影は6ページまでです。やり直す場合は「クリア」を押してください。','warn');return}
@@ -500,9 +525,10 @@ async function addCameraPage(f){
     c.width=Math.round(img.width*scale);c.height=Math.round(img.height*scale);c.getContext('2d').drawImage(img,0,0,c.width,c.height);
     renderedPages.push(c);addThumb(c,renderedPages.length);
     $('cameraCount').textContent=`撮影 ${renderedPages.length}/6枚`;
-    setStatus(`${renderedPages.length}ページ撮影しました。${renderedPages.length<6?'続けて次のページを撮影してください。':'6ページ揃いました。「OCR読み取り開始」を押してください。'}`);
-  }catch(e){setStatus('撮影画像を読み込めませんでした。','bad')}
-  finally{$('cameraInput').value=''}
+    await processCameraPage(c,renderedPages.length-1);
+  }catch(e){
+    console.error(e);setStatus('撮影画像を読み込めませんでした。','bad')
+  }finally{$('cameraInput').value=''}
 }
 $('fileInput').onchange=()=>previewSelectedFile($('fileInput').files[0]);
 $('cameraBtn').onclick=()=>$('cameraInput').click();
