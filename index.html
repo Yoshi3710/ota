@@ -113,7 +113,10 @@ footer{max-width:1480px;margin:0 auto;padding:0 18px 22px;color:#6c797f;font-siz
   <section id="previewArea" class="card">
     <div class="preview-toolbar">
       <div><h2 style="margin-bottom:3px">③ エデュース向け発注書プレビュー</h2><div id="previewInfo" class="muted">まだ作成されていません。</div></div>
-      <div class="row"><button id="printBtn" class="primary" disabled>印刷 / PDF保存</button></div>
+      <div class="row">
+        <button id="printBtn" class="primary" disabled>印刷</button>
+        <button id="pdfBtn" disabled>PDF保存</button>
+      </div>
     </div>
     <div id="printArea" class="preview-scroller"><div class="muted">「発注書を作成」を押すと、学年ごとにまとめ、同一品番が重なる場合だけ次ページへ分けて作成します。</div></div>
   </section>
@@ -492,14 +495,14 @@ return `<section class="order-page">
   </div>
   <div class="order-body"><div>${tableBlock(group)}<div class="note">※各学年別にご発注下さい。何卒よろしくお願い致します。</div></div><div><div class="rightbox"><div class="faxmark" style="display:${s.faxStamp?'block':'none'}">FAX済</div></div><div class="contactbox"><div class="small">■ご用命・お問い合わせは</div><b>${esc(s.vendorName)}</b><br>TEL: ${esc(s.tel)}<br>FAX: ${esc(s.fax)}</div></div></div>
 </section>`}
-function makeOrders(){dedupe();const rows=collectRows();updateWarnings();const groups=groupRows(rows);if(!groups.length){alert('発注書に変換できる明細がありません。');return}const html=groups.map((g,i)=>makePage(g,i+1,groups.length)).join('');$('printArea').innerHTML=html;const inputTotal=rows.filter(r=>r.qty&&MASTER[r.code]&&!MASTER[r.code].unsupported).reduce((s,r)=>s+r.qty,0),outputTotal=groups.reduce((s,g)=>s+g.rows.reduce((t,r)=>t+r.qty,0),0),ok=inputTotal===outputTotal;$('previewInfo').textContent=`${groups.length}ページ作成しました（学年ごとに集約し、同一品番が重なる場合のみ分割）。数量照合 ${inputTotal} → ${outputTotal} ${ok?'一致':'不一致'}。内容確認後に「印刷 / PDF保存」を押してください。`;$('previewInfo').className=ok?'muted':'bad';$('printBtn').disabled=!ok;$('previewArea').scrollIntoView({behavior:'smooth',block:'start'})}
+function makeOrders(){dedupe();const rows=collectRows();updateWarnings();const groups=groupRows(rows);if(!groups.length){alert('発注書に変換できる明細がありません。');return}const html=groups.map((g,i)=>makePage(g,i+1,groups.length)).join('');$('printArea').innerHTML=html;const inputTotal=rows.filter(r=>r.qty&&MASTER[r.code]&&!MASTER[r.code].unsupported).reduce((s,r)=>s+r.qty,0),outputTotal=groups.reduce((s,g)=>s+g.rows.reduce((t,r)=>t+r.qty,0),0),ok=inputTotal===outputTotal;$('previewInfo').textContent=`${groups.length}ページ作成しました（学年ごとに集約し、同一品番が重なる場合のみ分割）。数量照合 ${inputTotal} → ${outputTotal} ${ok?'一致':'不一致'}。内容確認後に「印刷」または「PDF保存」を押してください。`;$('previewInfo').className=ok?'muted':'bad';$('printBtn').disabled=!ok;$('pdfBtn').disabled=!ok;$('previewArea').scrollIntoView({behavior:'smooth',block:'start'})}
 
 function saveSettings(){localStorage.setItem('tanakaEduseSettings',JSON.stringify(getSettings()));setStatus('共通設定をこのブラウザに保存しました。')}
 function restoreSettings(){const x=localStorage.getItem('tanakaEduseSettings');if(!x)return;try{const s=JSON.parse(x);for(const k of ['year','orderDate','schoolCode','vendorName','vendorCode','orderer','tel','fax','delivery'])if(s[k]!=null&&$(k))$(k).value=s[k];$('faxStamp').checked=!!s.faxStamp}catch{}}
 function resetSettings(){localStorage.removeItem('tanakaEduseSettings');$('year').value='2026';$('orderDate').value=todayStr();$('schoolCode').value='507070';$('vendorName').value='(株)タナカ';$('vendorCode').value='137308';$('orderer').value='大田';$('tel').value='06-6997-6030';$('fax').value='06-6997-6035';$('delivery').value='学校直送';$('faxStamp').checked=false}
 
-$('scanBtn').onclick=runOcr;$('sampleBtn').onclick=loadSample;$('clearBtn').onclick=()=>{renderedPages=[];detectedRows=[];cameraRawRows=[];$('pages').innerHTML='';$('rowsBody').innerHTML='';$('rawText').value='';$('schoolName').value='';$('teacherName').value='';$('fileInput').value='';$('cameraCount').textContent='撮影 0/6枚';stopDirectCamera();$('printArea').innerHTML='<div class="muted">「発注書を作成」を押すと、学年ごとにまとめ、同一品番が重なる場合だけ次ページへ分けて作成します。</div>';$('previewInfo').className='muted';$('previewInfo').textContent='まだ作成されていません。';$('printBtn').disabled=true;setBar(0);setStatus('クリアしました。')};
-$('addRowBtn').onclick=()=>{$('rowsBody').insertAdjacentHTML('beforeend',rowTemplate({}));bindRowEvents()};$('dedupeBtn').onclick=dedupe;$('makeBtn').onclick=makeOrders;$('printBtn').onclick=()=>window.print();$('saveSettings').onclick=saveSettings;$('resetSettings').onclick=resetSettings;
+$('scanBtn').onclick=runOcr;$('sampleBtn').onclick=loadSample;$('clearBtn').onclick=()=>{renderedPages=[];detectedRows=[];cameraRawRows=[];$('pages').innerHTML='';$('rowsBody').innerHTML='';$('rawText').value='';$('schoolName').value='';$('teacherName').value='';$('fileInput').value='';$('cameraCount').textContent='撮影 0/6枚';stopDirectCamera();$('printArea').innerHTML='<div class="muted">「発注書を作成」を押すと、学年ごとにまとめ、同一品番が重なる場合だけ次ページへ分けて作成します。</div>';$('previewInfo').className='muted';$('previewInfo').textContent='まだ作成されていません。';$('printBtn').disabled=true;$('pdfBtn').disabled=true;setBar(0);setStatus('クリアしました。')};
+$('addRowBtn').onclick=()=>{$('rowsBody').insertAdjacentHTML('beforeend',rowTemplate({}));bindRowEvents()};$('dedupeBtn').onclick=dedupe;$('makeBtn').onclick=makeOrders;$('printBtn').onclick=()=>window.print();$('pdfBtn').onclick=()=>{setStatus('印刷画面で「PDFに保存」または「ファイルに保存」を選択してください。');window.print()};$('saveSettings').onclick=saveSettings;$('resetSettings').onclick=resetSettings;
 async function previewSelectedFile(f){if(!f)return;try{cameraRawRows=[];setStatus('プレビューを作成しています…');await renderInput(f);$('cameraCount').textContent='撮影 0/6枚';setStatus(`${renderedPages.length}ページを読み込みました。「OCR読み取り開始」を押してください。`)}catch(e){setStatus('ファイルを読み込めませんでした。','bad')}}
 async function processCameraPage(canvas,pageIndex){
   try{
