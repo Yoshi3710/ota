@@ -20,7 +20,7 @@ input,select,textarea{border:1px solid #b9c6cd;border-radius:7px;padding:7px 8px
 .camera-panel{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;padding:16px}.camera-panel.open{display:flex}.camera-box{width:min(720px,100%);background:#111;border-radius:12px;padding:12px}.camera-box video{width:100%;max-height:72vh;object-fit:contain;background:#000;border-radius:8px}.camera-actions{display:flex;gap:10px;justify-content:center;margin-top:10px;flex-wrap:wrap}.camera-actions button{min-width:120px}.camera-note{color:#fff;text-align:center;font-size:12px;margin:0 0 8px}
 .progress{height:9px;border-radius:20px;background:#e5ebee;overflow:hidden;margin:10px 0}.progress>div{height:100%;width:0;background:var(--accent);transition:width .2s}.status{font-size:13px;min-height:20px}.warn{color:var(--warn)}.bad{color:var(--bad)}
 #pages{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:480px;overflow:auto}.page-thumb{border:1px solid var(--line);border-radius:8px;padding:5px;background:#fafafa}.page-thumb canvas{width:100%;height:auto;display:block}.page-thumb .cap{font-size:11px;color:#69757b;margin-top:4px}
-.table-wrap{overflow:auto;max-height:560px;border:1px solid var(--line);border-radius:8px} table.edit{border-collapse:collapse;width:100%;font-size:12px;background:#fff}.edit th,.edit td{border-bottom:1px solid #e0e6e9;border-right:1px solid #eef1f2;padding:5px}.edit th{position:sticky;top:0;background:#f5f8f9;z-index:2;white-space:nowrap}.edit input,.edit select{width:100%;padding:5px;border-radius:5px}.edit td:nth-child(1){width:66px}.edit td:nth-child(2){width:92px}.edit td:nth-child(3){width:70px}.edit td:nth-child(4){width:90px}.edit td:nth-child(6){width:80px}.chip{display:inline-block;padding:2px 7px;border-radius:14px;background:#e7f0f3;font-size:11px;margin:2px 3px 2px 0}.danger-chip{background:#fde8e8;color:#8e1f1f}
+.table-wrap{overflow:auto;max-height:560px;border:1px solid var(--line);border-radius:8px} table.edit{border-collapse:collapse;width:100%;font-size:12px;background:#fff}.edit th,.edit td{border-bottom:1px solid #e0e6e9;border-right:1px solid #eef1f2;padding:5px}.edit th{position:sticky;top:0;background:#f5f8f9;z-index:2;white-space:nowrap}.edit input,.edit select{width:100%;padding:5px;border-radius:5px}.edit td:nth-child(1){width:66px}.edit td:nth-child(2){width:92px}.edit td:nth-child(3){width:70px}.edit td:nth-child(4){width:90px}.edit td:nth-child(6){width:80px}.chip{display:inline-block;padding:2px 7px;border-radius:14px;background:#e7f0f3;font-size:11px;margin:2px 3px 2px 0}.chip.manual-chip{background:#ffe2a8;color:#7a4300;font-weight:700}.edit tr.manual-edited td{background:#fffaf0}.danger-chip{background:#fde8e8;color:#8e1f1f}
 .settings{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.settings .wide{grid-column:span 2}.settings .full{grid-column:1/-1}
 .raw{width:100%;height:150px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px}
 #previewArea{grid-column:1/-1;min-width:0}.preview-toolbar{margin-bottom:8px}.output-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:8px 0;position:sticky;left:0;width:max-content;max-width:100%;z-index:3}.output-actions button{min-width:92px}.preview-scroller{overflow:auto;border:1px solid var(--line);border-radius:10px;background:#dbe3e7;padding:14px;max-height:780px;max-width:100%}
@@ -105,7 +105,7 @@ footer{max-width:1480px;margin:0 auto;padding:0 18px 22px;color:#6c797f;font-siz
     </div>
     <div class="table-wrap">
       <table class="edit">
-        <thead><tr><th>学年</th><th>教科</th><th>規格</th><th>品番</th><th>色</th><th>数量</th><th>確認</th><th></th></tr></thead>
+        <thead><tr><th>学年</th><th>教科</th><th>規格</th><th>品番</th><th>色</th><th>数量</th><th>状態</th><th></th></tr></thead>
         <tbody id="rowsBody"></tbody>
       </table>
     </div>
@@ -627,18 +627,35 @@ async function runOcr(){
 }
 
 function consolidateRows(rows){const map=new Map();for(const r of rows){if(!r.qty||r.qty<=0)continue;const k=[normalizeGrade(r.grade),cleanSubject(r.subject),r.code].join('|');if(map.has(k))map.get(k).qty+=r.qty;else map.set(k,{...r,grade:normalizeGrade(r.grade),subject:cleanSubject(r.subject)});}return [...map.values()]}
-function rowTemplate(r={}){const m=MASTER[r.code]||{};return `<tr>
+function rowTemplate(r={}){
+  const m=MASTER[r.code]||{};
+  const manual=!!r.manual;
+  const statusText=manual?'手動修正':r.auto?(r.corrected?'自動補正':r.template?'帳票読取':'OCR '+(r.confidence||'')):'手入力';
+  const statusClass=manual?'chip manual-chip':'chip';
+  return `<tr${manual?' class="manual-edited"':''} data-manual="${manual?'1':'0'}">
 <td><input value="${esc(r.grade||'')}" placeholder="1年"></td>
 <td><input value="${esc(r.subject||'')}" placeholder="美術"></td>
 <td><select><option value="A4S" ${(r.family||m.family)==='A4S'?'selected':''}>A4S</option><option value="B5S" ${(r.family||m.family)==='B5S'?'selected':''}>B5S</option><option value="A5E" ${(r.family||m.family)==='A5E'?'selected':''}>A5E</option><option value="B6E" ${(r.family||m.family)==='B6E'?'selected':''}>B6E</option><option value="その他">その他</option></select></td>
 <td><input value="${esc(r.code||'')}" inputmode="numeric"></td>
 <td><input value="${esc(r.color||m.color||'')}"></td>
 <td><input value="${esc(r.qty||'')}" inputmode="numeric"></td>
-<td>${r.auto?`<span class="chip">${r.corrected?'自動補正':r.template?'帳票読取':'OCR '+(r.confidence||'')}</span>`:'<span class="chip">手入力</span>'}</td>
-<td><button class="danger del">削除</button></td></tr>`}
+<td><span class="${statusClass} row-status">${esc(statusText)}</span></td>
+<td><button class="danger del">削除</button></td></tr>`
+}
 function renderRows(rows){$('rowsBody').innerHTML=rows.map(rowTemplate).join('');bindRowEvents()}
-function bindRowEvents(){document.querySelectorAll('.del').forEach(b=>b.onclick=()=>{b.closest('tr').remove();updateWarnings()});document.querySelectorAll('#rowsBody input,#rowsBody select').forEach(x=>x.onchange=updateWarnings)}
-function collectRows(){return [...$('rowsBody').querySelectorAll('tr')].map(tr=>{const e=[...tr.querySelectorAll('input,select')];const code=e[3].value.trim();const m=MASTER[code]||{};return {grade:normalizeGrade(e[0].value),subject:cleanSubject(e[1].value),family:e[2].value,code,color:e[4].value.trim()||m.color||'',qty:parseInt(e[5].value||'0',10)||0};}).filter(r=>r.qty>0||r.code||r.subject||r.grade)}
+function markRowManual(el){
+  const tr=el.closest('tr');if(!tr)return;
+  tr.dataset.manual='1';tr.classList.add('manual-edited');
+  const chip=tr.querySelector('.row-status');
+  if(chip){chip.textContent='手動修正';chip.classList.add('manual-chip')}
+  updateWarnings();
+}
+function bindRowEvents(){
+  document.querySelectorAll('.del').forEach(b=>b.onclick=()=>{b.closest('tr').remove();updateWarnings()});
+  document.querySelectorAll('#rowsBody input').forEach(x=>x.addEventListener('input',()=>markRowManual(x)));
+  document.querySelectorAll('#rowsBody select').forEach(x=>x.addEventListener('change',()=>markRowManual(x)));
+}
+function collectRows(){return [...$('rowsBody').querySelectorAll('tr')].map(tr=>{const e=[...tr.querySelectorAll('input,select')];const code=e[3].value.trim();const m=MASTER[code]||{};return {grade:normalizeGrade(e[0].value),subject:cleanSubject(e[1].value),family:e[2].value,code,color:e[4].value.trim()||m.color||'',qty:parseInt(e[5].value||'0',10)||0,manual:tr.dataset.manual==='1'};}).filter(r=>r.qty>0||r.code||r.subject||r.grade)}
 function updateWarnings(){const rows=collectRows();const problems=[];for(const [id,label] of [['schoolName','学校名'],['teacherName','担当先生名'],['schoolPostal','学校郵便番号'],['schoolAddress','学校住所'],['schoolTel','学校電話番号']])if(!$(id).value.trim())problems.push(`${label}が未入力です。②で確認・入力してください。`);rows.forEach((r,i)=>{if(!r.grade)problems.push(`行${i+1}: 学年が未入力`);if(!r.subject&&r.grade!=='教務')problems.push(`行${i+1}: 教科が未入力`);if(!MASTER[r.code])problems.push(`行${i+1}: 未登録品番 ${r.code||'(空欄)'}`);else if(MASTER[r.code].unsupported&&r.qty>0)problems.push(`行${i+1}: ${MASTER[r.code].family} ${r.code} は現在のエデュース発注書レイアウト未対応`);if(!r.qty)problems.push(`行${i+1}: 数量が0/未入力`)});$('warnings').innerHTML=problems.length?`<div class="unknown-box"><b>確認が必要です</b><br>${problems.map(esc).join('<br>')}</div>`:''}
 
 function loadSample(){
@@ -650,7 +667,7 @@ function loadSample(){
  {grade:'3年',subject:'理B',code:'131801',family:'A4S',color:'イエロー',qty:172},{grade:'3年',subject:'美術',code:'153350',family:'A4S',color:'オレンジ',qty:172},{grade:'3年',subject:'理A',code:'131844',family:'A4S',color:'グリーン',qty:172},{grade:'3年',subject:'保体',code:'140932',family:'A4S',color:'グレー',qty:172},{grade:'3年',subject:'社A',code:'131860',family:'B5S',color:'イエロー',qty:172},{grade:'3年',subject:'国語',code:'131879',family:'B5S',color:'ピンク',qty:172},{grade:'3年',subject:'英語',code:'131887',family:'B5S',color:'バイオレット',qty:172},{grade:'3年',subject:'家庭',code:'131895',family:'B5S',color:'ライトブルー',qty:172},{grade:'3年',subject:'テスト',code:'131909',family:'B5S',color:'グリーン',qty:172},{grade:'3年',subject:'数学',code:'131917',family:'B5S',color:'ブルー',qty:172},{grade:'3年',subject:'クラス',code:'131925',family:'B5S',color:'グレー',qty:172},{grade:'3年',subject:'社B',code:'131860',family:'B5S',color:'イエロー',qty:172}
  ];renderRows(detectedRows);updateWarnings();setStatus('発注エデュース6枚の見本データを入力しました。「発注書を作成」でV2の編成を確認できます。')
 }
-function dedupe(){const rows=collectRows();const map=new Map();for(const r of rows){const k=[r.grade,r.subject,r.code].join('|');if(map.has(k))map.get(k).qty+=r.qty;else map.set(k,{...r});}renderRows([...map.values()]);updateWarnings()}
+function dedupe(){const rows=collectRows();const map=new Map();for(const r of rows){const k=[r.grade,r.subject,r.code].join('|');if(map.has(k)){const x=map.get(k);x.qty+=r.qty;x.manual=x.manual||r.manual}else map.set(k,{...r});}renderRows([...map.values()]);updateWarnings()}
 function jpDate(s){const d=s?new Date(s+'T00:00:00'):new Date();return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`}
 function getSettings(){return {year:$('year').value.trim(),orderDate:$('orderDate').value,schoolCode:$('schoolCode').value.trim(),vendorName:$('vendorName').value.trim(),vendorCode:$('vendorCode').value.trim(),orderer:$('orderer').value.trim(),tel:$('tel').value.trim(),fax:$('fax').value.trim(),delivery:$('delivery').value.trim()}}
 function groupRows(rows){
