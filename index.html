@@ -205,22 +205,33 @@ function addThumb(c,i){const d=document.createElement('div');d.className='page-t
 async function getWorker(){if(ocrWorker)return ocrWorker;setStatus('日本語OCRエンジンを準備しています…');ocrWorker=await Tesseract.createWorker('jpn+eng',1,{logger:m=>{if(m.progress!=null)setBar(Math.round(m.progress*15));}});return ocrWorker}
 
 function extractHeaderFields(text){
+  text=String(text||'').normalize('NFKC').replace(/(\d)[ー‐−―](?=\d)/g,'$1-');
+  const lines=text.split(/\n+/).map(x=>x.trim()).filter(Boolean);
   if(!$('schoolName').value){
     const m=text.match(/([^\n]{2,30}(?:中学校|小学校|高等学校))/);
     if(m)$('schoolName').value=m[1].replace(/^(発注元|学校名|住所)[:：\s]*/,'').trim();
   }
   if(!$('teacherName').value){
-    const m=text.match(/担当者[^\n]{0,12}([一-龠々ぁ-んァ-ヶA-Za-z]+(?:[ 　]+[一-龠々ぁ-んァ-ヶA-Za-z]+)?)/);
-    if(m)$('teacherName').value=m[1].trim();
+    const m=text.match(/(?:担当者|担当先生|先生名|担当)[ \t]*[:：]?[ \t]*([^\n]+)/);
+    if(m)$('teacherName').value=m[1].split(/\s+(?:TEL|FAX|電話|学校名|住所|所属)\s*[:：]?/i)[0].replace(/\s*(先生|様)\s*$/,'').trim();
   }
   if(!$('schoolPostal').value){
-    const m=text.match(/(\d{3}[-ー‐]?\d{4})/);
-    if(m)$('schoolPostal').value=m[1].replace(/[ー‐]/g,'-');
+    const m=text.match(/(?:^|[^\d-])(\d{3}-\d{4}|\d{7})(?![\d-])/m);
+    if(m)$('schoolPostal').value=m[1].replace(/^(\d{3})(\d{4})$/,'$1-$2');
   }
   if(!$('schoolAddress').value){
-    const lines=text.split(/\n+/).map(x=>x.trim()).filter(Boolean);
-    const line=lines.find(x=>/(丁目|番地|番|号|\d+-\d+)/.test(x)&&!/(TEL|FAX|発注日|担当者)/i.test(x));
-    if(line)$('schoolAddress').value=line.replace(/^住所[:：\s]*/,'').replace(/^〒?\s*\d{3}[-ー‐]?\d{4}\s*/,'').trim();
+    const line=lines.find(x=>/^(学校住所|住所|所在地)\s*[:：]?\s*\S/.test(x))||lines.find(x=>/[都道府県市区町村].*(丁目|番地|番|号|\d+-\d+)/.test(x)&&!/(TEL|FAX|発注日|担当者|販売店)/i.test(x));
+    if(line)$('schoolAddress').value=line.replace(/^(学校住所|住所|所在地)[:：\s]*/,'').replace(/^〒?\s*\d{3}-?\d{4}\s*/,'').trim();
+  }
+  if(!$('schoolTel').value){
+    const phones=[];
+    for(const line of lines){
+      if(/販売店|ご用命|お問い合わせ/.test(line))continue;
+      const m=line.replace(/\s*([-()])\s*/g,'$1').match(/(?:学校\s*)?(?:電話番号|TEL|電話)\s*[:：]?\s*(0\d{1,4}[-(]\d{1,4}[-)]\d{3,4})(?!\d)/i);
+      if(m&&![$('tel').value,$('fax').value].includes(m[1].replace(/[()]/g,'-')))phones.push(m[1].replace(/[()]/g,'-'));
+    }
+    const unique=[...new Set(phones)];
+    if(unique.length===1)$('schoolTel').value=unique[0];
   }
 }
 
@@ -418,7 +429,7 @@ async function runOcr(){
     const worker=await getWorker(),allRows=[],details=[];
     await worker.setParameters({tessedit_char_whitelist:'',tessedit_pageseg_mode:'6'});
     if(renderedPages[0]){
-      setStatus('学校名・担当者を読み取っています…');
+      setStatus('学校名・担当者・住所・電話番号を読み取っています…');
       const head=await worker.recognize(renderedPages[0]);
       extractHeaderFields(head.data.text||'');
     }
@@ -434,7 +445,7 @@ async function runOcr(){
     for(const r of detectedRows)details.push(`${r.grade} ${r.subject} / ${r.code} ${r.color} / ${r.qty}${r.corrected?'（自動補正）':''}`);
     $('rawText').value=details.join('\n');
     if(detectedRows.length){
-      setStatus(`${detectedRows.length}行を帳票のセル位置から読み取りました。数量だけ最終確認してください。`);
+      setStatus(`${detectedRows.length}行を帳票のセル位置から読み取りました。学校情報と数量を最終確認してください。`);
     }else{
       setStatus('数量セルを認識できませんでした。元PDFの向き・様式を確認してください。','bad');
     }
@@ -456,7 +467,7 @@ function rowTemplate(r={}){const m=MASTER[r.code]||{};return `<tr>
 function renderRows(rows){$('rowsBody').innerHTML=rows.map(rowTemplate).join('');bindRowEvents()}
 function bindRowEvents(){document.querySelectorAll('.del').forEach(b=>b.onclick=()=>{b.closest('tr').remove();updateWarnings()});document.querySelectorAll('#rowsBody input,#rowsBody select').forEach(x=>x.onchange=updateWarnings)}
 function collectRows(){return [...$('rowsBody').querySelectorAll('tr')].map(tr=>{const e=[...tr.querySelectorAll('input,select')];const code=e[3].value.trim();const m=MASTER[code]||{};return {grade:normalizeGrade(e[0].value),subject:cleanSubject(e[1].value),family:e[2].value,code,color:e[4].value.trim()||m.color||'',qty:parseInt(e[5].value||'0',10)||0};}).filter(r=>r.qty>0||r.code||r.subject||r.grade)}
-function updateWarnings(){const rows=collectRows();const problems=[];rows.forEach((r,i)=>{if(!r.grade)problems.push(`行${i+1}: 学年が未入力`);if(!r.subject&&r.grade!=='教務')problems.push(`行${i+1}: 教科が未入力`);if(!MASTER[r.code])problems.push(`行${i+1}: 未登録品番 ${r.code||'(空欄)'}`);else if(MASTER[r.code].unsupported&&r.qty>0)problems.push(`行${i+1}: ${MASTER[r.code].family} ${r.code} は現在のエデュース発注書レイアウト未対応`);if(!r.qty)problems.push(`行${i+1}: 数量が0/未入力`)});$('warnings').innerHTML=problems.length?`<div class="unknown-box"><b>確認が必要です</b><br>${problems.map(esc).join('<br>')}</div>`:''}
+function updateWarnings(){const rows=collectRows();const problems=[];for(const [id,label] of [['schoolName','学校名'],['teacherName','担当先生名'],['schoolPostal','学校郵便番号'],['schoolAddress','学校住所'],['schoolTel','学校電話番号']])if(!$(id).value.trim())problems.push(`${label}が未入力です。②で確認・入力してください。`);rows.forEach((r,i)=>{if(!r.grade)problems.push(`行${i+1}: 学年が未入力`);if(!r.subject&&r.grade!=='教務')problems.push(`行${i+1}: 教科が未入力`);if(!MASTER[r.code])problems.push(`行${i+1}: 未登録品番 ${r.code||'(空欄)'}`);else if(MASTER[r.code].unsupported&&r.qty>0)problems.push(`行${i+1}: ${MASTER[r.code].family} ${r.code} は現在のエデュース発注書レイアウト未対応`);if(!r.qty)problems.push(`行${i+1}: 数量が0/未入力`)});$('warnings').innerHTML=problems.length?`<div class="unknown-box"><b>確認が必要です</b><br>${problems.map(esc).join('<br>')}</div>`:''}
 
 function loadSample(){
  $('schoolName').value='高槻市立阿武山中学校';$('teacherName').value='阿武 太郎';$('schoolPostal').value='569-1041';$('schoolAddress').value='高槻市奈佐原1丁目2-1';$('schoolTel').value='072-693-9211';$('orderDate').value='2026-04-14';
@@ -537,6 +548,7 @@ function saveSettings(){localStorage.setItem('tanakaEduseSettings',JSON.stringif
 function restoreSettings(){const x=localStorage.getItem('tanakaEduseSettings');if(!x)return;try{const s=JSON.parse(x);for(const k of ['year','orderDate','schoolCode','vendorName','vendorCode','orderer','tel','fax','delivery'])if(s[k]!=null&&$(k))$(k).value=s[k]}catch{}}
 function resetSettings(){localStorage.removeItem('tanakaEduseSettings');$('year').value='2026';$('orderDate').value=todayStr();$('schoolCode').value='507070';$('vendorName').value='(株)タナカ';$('vendorCode').value='137308';$('orderer').value='大田';$('tel').value='06-6997-6030';$('fax').value='06-6997-6035';$('delivery').value='学校直送'}
 
+['schoolName','teacherName','schoolPostal','schoolAddress','schoolTel'].forEach(id=>$(id).addEventListener('input',updateWarnings));
 $('scanBtn').onclick=runOcr;$('sampleBtn').onclick=loadSample;$('clearBtn').onclick=()=>{renderedPages=[];detectedRows=[];cameraRawRows=[];$('pages').innerHTML='';$('rowsBody').innerHTML='';$('rawText').value='';$('schoolName').value='';$('teacherName').value='';$('schoolPostal').value='';$('schoolAddress').value='';$('schoolTel').value='';$('fileInput').value='';$('cameraCount').textContent='撮影 0/6枚';stopDirectCamera();$('printArea').innerHTML='<div class="muted">「発注書を作成」を押すと、学年ごとにまとめ、同一品番が重なる場合だけ次ページへ分けて作成します。</div>';$('previewInfo').className='muted';$('previewInfo').textContent='まだ作成されていません。';$('printBtn').disabled=true;$('pdfBtn').disabled=true;$('printBtnBottom').disabled=true;$('pdfBtnBottom').disabled=true;setBar(0);setStatus('クリアしました。')};
 $('addRowBtn').onclick=()=>{$('rowsBody').insertAdjacentHTML('beforeend',rowTemplate({}));bindRowEvents()};$('dedupeBtn').onclick=dedupe;function loadExternalScript(src,test){
   if(test())return Promise.resolve();
