@@ -710,7 +710,7 @@ return `<section class="order-page">
   <div class="order-topline"><div class="order-title">${esc(s.year)}年　サクラ ファイル 専用注文書</div><div><div class="send-count">送付枚数　${total} 枚中 ${i} 枚</div><div class="order-date">${esc(jpDate(s.orderDate))}</div></div></div>
   <div class="order-head">
     <div class="order-head-left">
-      <div class="head-row r1"><div><b>発注区分(○印)</b></div><div>${esc(s.delivery)}　・</div><div><b>学校直送コード(6桁)</b>　${esc(s.schoolCode)}</div></div>
+      <div class="head-row r1"><div><b>発注区分</b></div><div>${esc(s.delivery)}</div><div><b>学校直送コード(6桁)</b>　${esc(s.schoolCode)}</div></div>
       <div class="schoolrow">学校名　${esc(school)}</div><div class="contactrow">〒 ${esc(postal)}　${esc(address)}<br>担当　${esc(teacher)} 先生　　所属　${line}<br>TEL　${esc(schoolTel)}</div>
     </div>
     <div class="vendor"><div class="vendor-labels"><div>販売店名</div><div>販売店コード</div><div>TEL</div><div>FAX</div><div>ご注文者</div></div><div class="vendor-values"><div>${esc(s.vendorName)}</div><div>${esc(s.vendorCode)}</div><div>${esc(s.tel)}</div><div>${esc(s.fax)}</div><div>${esc(s.orderer)}</div></div></div>
