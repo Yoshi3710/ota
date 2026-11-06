@@ -52,7 +52,7 @@ footer{max-width:1480px;margin:0 auto;padding:0 18px 22px;color:#6c797f;font-siz
     </div>
     <div class="progress"><div id="bar"></div></div>
     <div id="status" class="status muted">PDFまたは画像を選択してください。</div>
-    <p class="muted">初回OCR時は日本語認識データを読み込むため時間がかかります。画像はブラウザ内で処理し、この試作版ではサーバーへ保存しません。</p>
+    <p class="muted">今回は紙フラットファイル発注書の6ページ様式を基準に、表のセル位置から数量を読み取ります。画像はブラウザ内で処理し、この試作版ではサーバーへ保存しません。</p>
     <div id="pages"></div>
   </section>
 
@@ -74,7 +74,7 @@ footer{max-width:1480px;margin:0 auto;padding:0 18px 22px;color:#6c797f;font-siz
       <button id="makeBtn" class="primary">③ 発注書を作成</button>
     </div>
     <div id="warnings"></div>
-    <details style="margin-top:10px"><summary class="small">OCR生テキストを確認</summary><textarea id="rawText" class="raw" readonly></textarea></details>
+    <details style="margin-top:10px"><summary class="small">読み取り詳細を確認</summary><textarea id="rawText" class="raw" readonly></textarea></details>
   </section>
 
   <section class="card">
@@ -115,6 +115,20 @@ const MASTER={
 };
 const A4_CODES=['131801','153350','260143','131810','131828','131836','131844','131852','140932'];
 const B5_CODES=['131860','131879','131887','131895','131909','131917','131925'];
+const TEMPLATE_COLUMNS=[
+  [{grade:'1年',subject:'英語'},{grade:'1年',subject:'理科'},{grade:'1年',subject:'国語'},{grade:'1年',subject:'美術'},{grade:'1年',subject:'保体'},{grade:'1年',subject:'家庭'}],
+  [{grade:'1年',subject:'地理'},{grade:'1年',subject:'歴史'},{grade:'教務',subject:'教務'},null,null,null],
+  [{grade:'2年',subject:'英語'},{grade:'2年',subject:'社会'},{grade:'2年',subject:'理A'},{grade:'2年',subject:'国A'},{grade:'2年',subject:'国B'},{grade:'2年',subject:'数学'}],
+  [{grade:'2年',subject:'美術'},{grade:'2年',subject:'家庭'},{grade:'2年',subject:'理B'},{grade:'2年',subject:'保体'},{grade:'2年',subject:'特活'},{grade:'2年',subject:'テスト'}],
+  [{grade:'3年',subject:'国語'},{grade:'3年',subject:'数学'},{grade:'3年',subject:'社A'},{grade:'3年',subject:'社B'},{grade:'3年',subject:'理A'},{grade:'3年',subject:'理B'}],
+  [{grade:'3年',subject:'英語'},{grade:'3年',subject:'保体'},{grade:'3年',subject:'家庭'},{grade:'3年',subject:'美術'},{grade:'3年',subject:'クラス'},{grade:'3年',subject:'テスト'}]
+];
+const GRID_BASE={
+  w:1192,h:1685,
+  x:[440,530,631,720,822,912,1002],
+  a4:[454,475,497,519,541,563,585,607,629,650],
+  b5:[697,718,740,762,784,806,828,850]
+};
 let renderedPages=[]; let detectedRows=[]; let ocrWorker=null;
 
 function todayStr(){const d=new Date();return d.toISOString().slice(0,10)}
@@ -145,57 +159,233 @@ function addThumb(c,i){const d=document.createElement('div');d.className='page-t
 
 async function getWorker(){if(ocrWorker)return ocrWorker;setStatus('日本語OCRエンジンを準備しています…');ocrWorker=await Tesseract.createWorker('jpn+eng',1,{logger:m=>{if(m.progress!=null)setBar(Math.round(m.progress*15));}});return ocrWorker}
 
-function wordText(w){return (w.text||'').replace(/[，,．.]/g,'').trim()}
-function parsePageOcr(result,pageNo,canvas){
-  const words=(result.data.words||[]).filter(w=>w.text&&w.confidence>15); const text=result.data.text||'';
-  const W=canvas.width,H=canvas.height;
-  // school / teacher from text
-  if(!$('schoolName').value){const m=text.match(/([^\n]{2,30}(?:中学校|小学校|高等学校))/);if(m)$('schoolName').value=m[1].replace(/^(発注元|学校名|住所)[:：\s]*/,'').trim()}
-  if(!$('teacherName').value){const m=text.match(/担当者[^\n]{0,8}([一-龠々ぁ-んァ-ヶA-Za-z]+(?:[ 　]+[一-龠々ぁ-んァ-ヶA-Za-z]+)?)/);if(m)$('teacherName').value=m[1].trim()}
-  // known codes and row y positions
-  const codeWords=[];
-  for(const w of words){const t=wordText(w).replace(/[^0-9]/g,''); if(MASTER[t]) codeWords.push({code:t,y:(w.bbox.y0+w.bbox.y1)/2,x:(w.bbox.x0+w.bbox.x1)/2});}
-  // find probable subject headers in upper-middle area. Build x clusters from Japanese words in header zone.
-  const hdrWords=words.filter(w=>{const x=(w.bbox.x0+w.bbox.x1)/2/W,y=(w.bbox.y0+w.bbox.y1)/2/H;return y>0.17&&y<0.34&&x>0.29&&x<0.83;});
-  const clusters=[];
-  hdrWords.forEach(w=>{const cx=(w.bbox.x0+w.bbox.x1)/2;let c=clusters.find(k=>Math.abs(k.x-cx)<W*0.035);if(!c){c={x:cx,arr:[]};clusters.push(c)} c.arr.push(w)});
-  clusters.sort((a,b)=>a.x-b.x);
-  const headers=clusters.map(c=>{c.arr.sort((a,b)=>a.bbox.y0-b.bbox.y0);const raw=c.arr.map(w=>w.text.trim()).join('');let grade='';let subject='';const gm=raw.match(/([123])年/);if(gm)grade=gm[1]+'年'; if(/教務/.test(raw))grade='教務';
-    subject=raw.replace(/[123]年/g,'').replace(/教務用?/g,'教務').replace(/[^一-龠々ぁ-んァ-ヶA-Za-z0-9]/g,'');
-    if(grade==='教務')subject='教務';
-    return {x:c.x,grade,subject,raw};
-  }).filter(h=>h.grade||h.subject);
-  // quantity candidates: numeric words 1-4 digits, excluding known codes and totals/right side
-  const nums=words.map(w=>({t:wordText(w).replace(/[^0-9]/g,''),x:(w.bbox.x0+w.bbox.x1)/2,y:(w.bbox.y0+w.bbox.y1)/2,conf:w.confidence})).filter(n=>/^\d{1,4}$/.test(n.t)&&+n.t>0&&+n.t<1000&&n.x/W>0.30&&n.x/W<0.86&&n.y/H>0.28&&n.y/H<0.83);
-  const pageRows=[];
-  for(const cw of codeWords){
-    const near=nums.filter(n=>Math.abs(n.y-cw.y)<H*0.018 && Math.abs(n.x-cw.x)>W*0.06);
-    for(const n of near){
-      let h=headers.length?headers.reduce((a,b)=>Math.abs(b.x-n.x)<Math.abs(a.x-n.x)?b:a):null;
-      // reject totals/very far headers
-      if(h&&Math.abs(h.x-n.x)>W*0.09) h=null;
-      let grade=h?.grade||guessGradeFromText(text)||''; let subject=h?.subject||'';
-      if(subject==='教務')grade='教務';
-      const m=MASTER[cw.code];
-      pageRows.push({grade,subject,family:m.family,code:cw.code,color:m.color,qty:+n.t,confidence:Math.round(n.conf),page:pageNo,auto:true});
+function extractHeaderFields(text){
+  if(!$('schoolName').value){
+    const m=text.match(/([^\n]{2,30}(?:中学校|小学校|高等学校))/);
+    if(m)$('schoolName').value=m[1].replace(/^(発注元|学校名|住所)[:：\s]*/,'').trim();
+  }
+  if(!$('teacherName').value){
+    const m=text.match(/担当者[^\n]{0,12}([一-龠々ぁ-んァ-ヶA-Za-z]+(?:[ 　]+[一-龠々ぁ-んァ-ヶA-Za-z]+)?)/);
+    if(m)$('teacherName').value=m[1].trim();
+  }
+}
+
+function bestAnchor(score,expected,offsets,radius,scale){
+  let best=expected,bestScore=-1;
+  const lo=Math.max(0,Math.round(expected-radius)),hi=Math.min(score.length-1,Math.round(expected+radius));
+  const local=Math.max(1,Math.round(2*scale));
+  for(let a=lo;a<=hi;a++){
+    let total=0;
+    for(const off of offsets){
+      const p=Math.round(a+off*scale);
+      let peak=0;
+      for(let k=Math.max(0,p-local);k<=Math.min(score.length-1,p+local);k++)peak=Math.max(peak,score[k]||0);
+      total+=peak;
+    }
+    if(total>bestScore){bestScore=total;best=a;}
+  }
+  return best;
+}
+
+function detectTemplateGrid(canvas){
+  const W=canvas.width,H=canvas.height,ctx=canvas.getContext('2d',{willReadFrequently:true});
+  const data=ctx.getImageData(0,0,W,H).data;
+  const xScore=new Uint32Array(W),yScore=new Uint32Array(H);
+  const yMin=Math.floor(H*.20),yMax=Math.floor(H*.55);
+  const xMin=Math.floor(W*.08),xMax=Math.floor(W*.93);
+  for(let y=0;y<H;y++){
+    const yActive=y>=yMin&&y<=yMax;
+    for(let x=0;x<W;x++){
+      const p=(y*W+x)*4;
+      if(Math.max(data[p],data[p+1],data[p+2])<120){
+        if(yActive)xScore[x]++;
+        if(x>=xMin&&x<=xMax)yScore[y]++;
+      }
     }
   }
-  // de-duplicate exact spatial-derived duplicates
-  const map=new Map(); for(const r of pageRows){const k=[r.page,r.grade,r.subject,r.code,r.qty].join('|');if(!map.has(k))map.set(k,r)}
-  return {rows:[...map.values()],text,headers};
+  const sx=W/GRID_BASE.w,sy=H/GRID_BASE.h;
+  const xOffsets=GRID_BASE.x.map(v=>v-GRID_BASE.x[0]);
+  const yOffsets=GRID_BASE.a4.map(v=>v-GRID_BASE.a4[0]);
+  const xExpected=GRID_BASE.x[0]*sx,yExpected=GRID_BASE.a4[0]*sy;
+  const xa=bestAnchor(xScore,xExpected,xOffsets,12*sx,sx);
+  const ya=bestAnchor(yScore,yExpected,yOffsets,12*sy,sy);
+  return {
+    data,W,H,
+    x:GRID_BASE.x.map(v=>Math.round(xa+(v-GRID_BASE.x[0])*sx)),
+    a4:GRID_BASE.a4.map(v=>Math.round(ya+(v-GRID_BASE.a4[0])*sy)),
+    b5:GRID_BASE.b5.map(v=>Math.round(ya+(v-GRID_BASE.a4[0])*sy))
+  };
 }
-function guessGradeFromText(text){const ms=[...text.matchAll(/([123])\s*年/g)]; if(ms.length){const c={};ms.forEach(m=>c[m[1]]=(c[m[1]]||0)+1);const g=Object.entries(c).sort((a,b)=>b[1]-a[1])[0][0];return g+'年'} if(/教務/.test(text))return '教務';return ''}
 
-async function runOcr(){const file=$('fileInput').files[0];if(!file){setStatus('先にPDFまたは画像を選択してください。','bad');return}
-  try{$('scanBtn').disabled=true;setBar(1);setStatus('スキャン画像を読み込んでいます…');await renderInput(file);const worker=await getWorker();let allText=[];let allRows=[];
-    for(let i=0;i<renderedPages.length;i++){
-      const base=(i/renderedPages.length)*80+15;setStatus(`${i+1}/${renderedPages.length}ページをOCR読み取り中…`);
-      const r=await worker.recognize(renderedPages[i]);const p=parsePageOcr(r,i+1,renderedPages[i]);allText.push(`===== ${i+1}ページ =====\n${p.text}`);allRows.push(...p.rows);setBar(Math.round(base+80/renderedPages.length));
+function cellInkCount(grid,x0,x1,y0,y1){
+  const {data,W}=grid;
+  const ix=Math.max(4,Math.round((x1-x0)*.08)),iy=Math.max(3,Math.round((y1-y0)*.20));
+  let n=0;
+  for(let y=y0+iy;y<y1-iy;y++){
+    for(let x=x0+ix;x<x1-ix;x++){
+      const p=(y*W+x)*4;
+      if(Math.max(data[p],data[p+1],data[p+2])<110)n++;
     }
-    $('rawText').value=allText.join('\n\n');detectedRows=consolidateRows(allRows);renderRows(detectedRows);setBar(100);
-    const msg=detectedRows.length?`${detectedRows.length}行を自動認識しました。学年・教科・数量を必ず確認してください。`:'自動で明細を確定できませんでした。OCR生テキストを確認し、明細行を手入力してください。';setStatus(msg,detectedRows.length?'':'warn');updateWarnings();
-  }catch(e){console.error(e);setStatus('OCR処理でエラーが発生しました。通信状態を確認して、再度お試しください。','bad');}
-  finally{$('scanBtn').disabled=false}
+  }
+  return n;
+}
+
+function makeQtyCanvas(source,x0,x1,y0,y1){
+  const w=x1-x0,h=y1-y0;
+  const temp=document.createElement('canvas');temp.width=w;temp.height=h;
+  const tctx=temp.getContext('2d',{willReadFrequently:true});
+  tctx.drawImage(source,x0,y0,w,h,0,0,w,h);
+  const im=tctx.getImageData(0,0,w,h),d=im.data;
+  const bin=new Uint8Array(w*h);
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const p=(y*w+x)*4;
+    const border=x<3||x>=w-3||y<3||y>=h-3;
+    const black=!border&&Math.max(d[p],d[p+1],d[p+2])<180;
+    bin[y*w+x]=black?1:0;
+  }
+  const seen=new Uint8Array(bin.length),keep=new Uint8Array(bin.length),stack=[];
+  const dirs=[-1,1,-w,w,-w-1,-w+1,w-1,w+1];
+  for(let i=0;i<bin.length;i++){
+    if(!bin[i]||seen[i])continue;
+    stack.length=0;stack.push(i);seen[i]=1;const comp=[];
+    while(stack.length){
+      const q=stack.pop();comp.push(q);
+      const qx=q%w,qy=Math.floor(q/w);
+      for(const step of dirs){
+        const z=q+step;if(z<0||z>=bin.length||seen[z]||!bin[z])continue;
+        const zx=z%w,zy=Math.floor(z/w);
+        if(Math.abs(zx-qx)>1||Math.abs(zy-qy)>1)continue;
+        seen[z]=1;stack.push(z);
+      }
+    }
+    if(comp.length>=4)for(const q of comp)keep[q]=1;
+  }
+  let minX=w,minY=h,maxX=-1,maxY=-1;
+  for(let i=0;i<keep.length;i++)if(keep[i]){
+    const x=i%w,y=Math.floor(i/w);minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x);maxY=Math.max(maxY,y);
+  }
+  if(maxX<0)return null;
+  const pad=2;minX=Math.max(0,minX-pad);minY=Math.max(0,minY-pad);maxX=Math.min(w-1,maxX+pad);maxY=Math.min(h-1,maxY+pad);
+  const cw=maxX-minX+1,ch=maxY-minY+1,scale=8,border=24;
+  const out=document.createElement('canvas');out.width=cw*scale+border*2;out.height=ch*scale+border*2;
+  const octx=out.getContext('2d');octx.fillStyle='#fff';octx.fillRect(0,0,out.width,out.height);octx.fillStyle='#000';
+  for(let y=minY;y<=maxY;y++)for(let x=minX;x<=maxX;x++)if(keep[y*w+x]){
+    octx.fillRect(border+(x-minX)*scale,border+(y-minY)*scale,scale,scale);
+  }
+  return out;
+}
+
+async function readQty(worker,source,box){
+  const c=makeQtyCanvas(source,box.x0,box.x1,box.y0,box.y1);
+  if(!c)return {qty:0,confidence:0,raw:''};
+  const r=await worker.recognize(c);
+  const raw=(r.data.text||'').replace(/\D/g,'');
+  return {qty:parseInt(raw||'0',10)||0,confidence:Math.round(r.data.confidence||0),raw};
+}
+
+function correctTemplateQuantities(rows){
+  const out=rows.map(r=>({...r,rawQty:r.qty}));
+  const columns=new Map();
+  for(const r of out){
+    const k=`${r.page}|${r.col}`;if(!columns.has(k))columns.set(k,[]);columns.get(k).push(r);
+  }
+  for(const group of columns.values()){
+    if(group.length<3)continue;
+    const freq=new Map();
+    for(const r of group)if(r.qty>0)freq.set(r.qty,(freq.get(r.qty)||0)+1);
+    const ranked=[...freq.entries()].sort((a,b)=>b[1]-a[1]||String(b[0]).length-String(a[0]).length);
+    const mode=ranked[0]?.[0]||0,count=ranked[0]?.[1]||0;
+    if(mode&&count>=Math.max(2,Math.floor(group.length/2))){
+      for(const r of group)if(r.qty!==mode){r.qty=mode;r.corrected=true;}
+    }
+  }
+  const grades=new Map();
+  for(const r of out){
+    if(r.grade==='教務'||r.subject==='教務')continue;
+    if(!grades.has(r.grade))grades.set(r.grade,[]);
+    grades.get(r.grade).push(r);
+  }
+  for(const group of grades.values()){
+    const freq=new Map();
+    for(const r of group){
+      if(r.qty>=100&&r.subject!=='テスト')freq.set(r.qty,(freq.get(r.qty)||0)+1);
+    }
+    const ranked=[...freq.entries()].sort((a,b)=>b[1]-a[1]||a[0]-b[0]);
+    const base=ranked[0]?.[0]||0;
+    if(!base)continue;
+    for(const r of group){
+      if(!r.qty)continue;
+      if(r.qty<100||(r.subject!=='テスト'&&Math.abs(r.qty-base)<=15)){
+        if(r.qty!==base){r.qty=base;r.corrected=true;}
+      }
+    }
+  }
+  return out;
+}
+
+async function readTemplatePage(worker,canvas,pageIndex){
+  const cols=TEMPLATE_COLUMNS[pageIndex]||[];
+  if(!cols.length)return [];
+  const grid=detectTemplateGrid(canvas),rows=[];
+  const families=[
+    {family:'A4S',codes:A4_CODES,bounds:grid.a4},
+    {family:'B5S',codes:B5_CODES,bounds:grid.b5}
+  ];
+  const scale=(canvas.width/GRID_BASE.w)*(canvas.height/GRID_BASE.h);
+  const inkThreshold=Math.max(22,Math.round(22*scale));
+  for(const fam of families){
+    for(let ri=0;ri<fam.codes.length;ri++){
+      for(let ci=0;ci<6;ci++){
+        const meta=cols[ci];if(!meta)continue;
+        const x0=grid.x[ci],x1=grid.x[ci+1],y0=fam.bounds[ri],y1=fam.bounds[ri+1];
+        if(cellInkCount(grid,x0,x1,y0,y1)<=inkThreshold)continue;
+        const q=await readQty(worker,canvas,{x0,x1,y0,y1});
+        if(!q.qty)continue;
+        const m=MASTER[fam.codes[ri]];
+        rows.push({
+          grade:meta.grade,subject:meta.subject,family:fam.family,code:fam.codes[ri],color:m.color,
+          qty:q.qty,confidence:q.confidence,page:pageIndex+1,col:ci,auto:true,template:true
+        });
+      }
+    }
+  }
+  return rows;
+}
+
+async function runOcr(){
+  const file=$('fileInput').files[0];
+  if(!file){setStatus('先にPDFまたは画像を選択してください。','bad');return}
+  try{
+    $('scanBtn').disabled=true;setBar(1);setStatus('スキャン画像を読み込んでいます…');await renderInput(file);
+    if(renderedPages.length!==6){
+      setStatus(`現在の帳票専用読取は6ページ様式が基準です。今回は${renderedPages.length}ページのため、読み取り結果を必ず確認してください。`,'warn');
+    }
+    const worker=await getWorker(),allRows=[],details=[];
+    await worker.setParameters({tessedit_char_whitelist:'',tessedit_pageseg_mode:'6'});
+    if(renderedPages[0]){
+      setStatus('学校名・担当者を読み取っています…');
+      const head=await worker.recognize(renderedPages[0]);
+      extractHeaderFields(head.data.text||'');
+    }
+    await worker.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'7'});
+    for(let i=0;i<renderedPages.length;i++){
+      const pct=15+Math.round((i/renderedPages.length)*80);
+      setBar(pct);setStatus(`${i+1}/${renderedPages.length}ページの注文数量を読み取り中…`);
+      const rows=await readTemplatePage(worker,renderedPages[i],i);
+      allRows.push(...rows);
+    }
+    detectedRows=consolidateRows(correctTemplateQuantities(allRows));
+    renderRows(detectedRows);updateWarnings();setBar(100);
+    for(const r of detectedRows)details.push(`${r.grade} ${r.subject} / ${r.code} ${r.color} / ${r.qty}${r.corrected?'（自動補正）':''}`);
+    $('rawText').value=details.join('\n');
+    if(detectedRows.length){
+      setStatus(`${detectedRows.length}行を帳票のセル位置から読み取りました。数量だけ最終確認してください。`);
+    }else{
+      setStatus('数量セルを認識できませんでした。元PDFの向き・様式を確認してください。','bad');
+    }
+  }catch(e){
+    console.error(e);setStatus('OCR処理でエラーが発生しました。通信状態を確認して、再度お試しください。','bad');
+  }finally{$('scanBtn').disabled=false}
 }
 
 function consolidateRows(rows){const map=new Map();for(const r of rows){if(!r.qty||r.qty<=0)continue;const k=[normalizeGrade(r.grade),cleanSubject(r.subject),r.code].join('|');if(map.has(k))map.get(k).qty+=r.qty;else map.set(k,{...r,grade:normalizeGrade(r.grade),subject:cleanSubject(r.subject)});}return [...map.values()]}
@@ -206,7 +396,7 @@ function rowTemplate(r={}){const m=MASTER[r.code]||{};return `<tr>
 <td><input value="${esc(r.code||'')}" inputmode="numeric"></td>
 <td><input value="${esc(r.color||m.color||'')}"></td>
 <td><input value="${esc(r.qty||'')}" inputmode="numeric"></td>
-<td>${r.auto?`<span class="chip">OCR ${r.confidence||''}</span>`:'<span class="chip">手入力</span>'}</td>
+<td>${r.auto?`<span class="chip">${r.corrected?'自動補正':r.template?'帳票読取':'OCR '+(r.confidence||'')}</span>`:'<span class="chip">手入力</span>'}</td>
 <td><button class="danger del">削除</button></td></tr>`}
 function renderRows(rows){$('rowsBody').innerHTML=rows.map(rowTemplate).join('');bindRowEvents()}
 function bindRowEvents(){document.querySelectorAll('.del').forEach(b=>b.onclick=()=>{b.closest('tr').remove();updateWarnings()});document.querySelectorAll('#rowsBody input,#rowsBody select').forEach(x=>x.onchange=updateWarnings)}
